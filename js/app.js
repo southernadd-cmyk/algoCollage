@@ -169,10 +169,10 @@ async function addUploads(files) {
 }
 
 async function doSearch(more=false) {
-  searchController?.abort();const serial=++searchSerial;searchController=new AbortController();
   const requested=more&&searchState ? {...searchState,page:searchState.page+1} :
     {provider:$('provider').value,policy:$('license-policy').value,query:$('query').value.trim(),page:1};
   if(!requested.query) {notice('Enter a subject to search for.',true);$('query').focus();return;}
+  searchController?.abort();const serial=++searchSerial;searchController=new AbortController();
   const controller=searchController;
   const timeout=setTimeout(()=>controller.abort(),20000);
   $('search-button').disabled=true;$('more-results').disabled=true;
