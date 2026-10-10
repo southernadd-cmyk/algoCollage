@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#203b31">
+  <meta name="description" content="Collect images. Cut them with the golden ratio. Compose something unexpected. A browser collage studio powered by ALGO/ART.">
+  <title>ALGO/COLLAGE — Collect. Cut. Compose.</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+  <script defer src="vendor/algoart/random.js"></script>
+  <script defer src="vendor/algoart/phi.js"></script>
+  <script defer src="vendor/algoart/palettes.js"></script>
+  <script defer src="vendor/algoart/marker.js"></script>
+  <script defer src="vendor/algoart/generator.js"></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+<header class="masthead">
+  <a class="brand" href="./" aria-label="Algo Collage home"><span class="phi" aria-hidden="true">φ</span><span>ALGO<span class="slash">/</span>COLLAGE</span></a>
+  <p class="strap">COLLECT. CUT. COMPOSE.</p>
+  <nav class="project-actions" aria-label="Project"><button id="open-project">Open project</button><button id="save-project">Save project</button><a href="https://github.com/southernadd-cmyk/algoCollage" target="_blank" rel="noopener noreferrer" aria-label="Algo Collage on GitHub">GitHub ↗</a></nav>
+</header>
+<main class="studio">
+  <aside class="controls" aria-label="Collage controls">
+    <section class="source-section">
+      <div class="section-heading"><span class="step">01</span><h1>Choose your material.</h1></div>
+      <p class="intro">Build a pool of images. Everything you keep becomes material for your collage.</p>
+      <form id="search-form">
+        <label for="query">What are you looking for?</label>
+        <div class="search-row"><input id="query" name="query" type="search" maxlength="200" placeholder="e.g. botanical illustrations" autocomplete="off"><button class="primary" id="search-button" type="submit">Find images ↗</button></div>
+        <div class="topics" aria-label="Search topics"><button type="button" data-topic="botanical illustration">Botanical</button><button type="button" data-topic="space nebula">Space</button><button type="button" data-topic="architecture">Architecture</button><button type="button" data-topic="texture">Texture</button><button type="button" data-topic="cats">Cats</button></div>
+        <div class="paired"><div><label for="provider">Image source</label><select id="provider"><option value="commons">Wikimedia Commons</option><option value="openverse">Openverse</option></select></div><div><label for="license-policy">Search licences</label><select id="license-policy"><option value="public">Public domain / CC0</option><option value="attribution">Include CC BY / BY-SA</option></select></div></div>
+      </form>
+      <div class="upload-row"><button id="upload-button" class="upload-button">＋ Upload your images</button><span>or drop files here</span></div>
+      <p id="search-status" class="small-note" role="status">Free image sources. No API keys required.</p>
+      <p id="license-note" class="small-note" hidden>CC BY / BY-SA images need credits. BY-SA adaptations may also need a compatible ShareAlike licence. Source links are kept with your images.</p>
+      <div id="results" class="results" aria-label="Image search results"></div>
+      <button id="more-results" class="wide" hidden>More results</button>
+    </section>
+    <section class="composition-section">
+      <div class="section-heading"><span class="step">02</span><h2>Cut &amp; compose.</h2></div>
+      <p class="intro">Two independent outputs from ALGO/ART. One makes the pieces. One places them.</p>
+      <div class="paired engine-choices"><div><label for="cut-mode">Cut shapes</label><select id="cut-mode"><option value="geometric">Constructed forms</option><option value="rects">Recursive divisions</option><option value="field">Orbital shapes</option></select></div><div><label for="layout-mode">Assembly layout</label><select id="layout-mode"><option value="field">Orbital studies</option><option value="geometric">Constructed forms</option><option value="rects">Recursive divisions</option></select></div></div>
+      <div class="seed-row"><label for="cut-seed">Cut seed</label><input id="cut-seed" maxlength="80"><button id="recut" title="Make new cuts; keep the assembly seed">Re-cut ↻</button></div>
+      <div class="seed-row"><label for="layout-seed">Layout seed</label><input id="layout-seed" maxlength="80"><button id="recompose" title="Move the same fragments into a new layout">Recompose ↻</button></div>
+      <button id="shuffle-images" class="wide">Shuffle images ⇄</button>
+      <details open><summary>Composition &amp; paper <span>＋</span></summary>
+        <div class="range-field"><label for="pieces">Maximum pieces <output id="pieces-value" for="pieces">18</output></label><input id="pieces" type="range" min="6" max="48" value="18"></div>
+        <div class="range-field"><label for="detail">Cut detail <output id="detail-value" for="detail">30</output></label><input id="detail" type="range" min="8" max="60" value="30"></div>
+        <div class="range-field"><label for="negative-space">Quiet space <output id="negativeSpace-value" for="negative-space">55</output></label><input id="negative-space" type="range" min="0" max="90" value="55"></div>
+        <div class="range-field"><label for="scale">Piece scale <output id="scale-value" for="scale">165</output></label><input id="scale" type="range" min="60" max="230" value="165"></div>
+        <div class="range-field"><label for="rotation">Rotation <output id="rotation-value" for="rotation">14</output></label><input id="rotation" type="range" min="0" max="60" value="14"></div>
+        <div class="paired"><div><label for="orientation">Canvas</label><select id="orientation"><option value="portrait">Portrait · 1000 × 1400</option><option value="landscape">Landscape · 1400 × 1000</option><option value="square">Square · 1200 × 1200</option></select></div><div><label for="paper">Paper</label><select id="paper"><option value="#f4f0e5">Warm white</option><option value="#ffffff">White</option><option value="#e2d8c1">Buff</option><option value="#252924">Charcoal</option></select></div></div>
+        <div class="check-row"><label><input type="checkbox" id="shadow" checked> Paper shadows</label><label><input type="checkbox" id="monochrome"> Monochrome</label></div>
+      </details>
+    </section>
+    <details class="about"><summary>About this experiment <span>＋</span></summary><p>How far can the golden ratio govern a collage while its fragments remain unexpected?</p><p>The composition engine comes from <a href="https://southernadd-cmyk.github.io/algoart/" target="_blank" rel="noopener noreferrer">ALGO/ART ↗</a>. Images are cropped geometrically: this version does not isolate subjects from their backgrounds.</p><p>Your pool is saved in this browser. Save a project to keep the images and seeds together in a portable file.</p></details>
+  </aside>
+  <section class="workspace" aria-label="Canvas and image pool">
+    <div class="canvas-bar"><div class="view-tabs" role="tablist" aria-label="Canvas view"><button id="view-collage" role="tab" aria-selected="true" aria-controls="canvas-panel" data-view="collage">Collage</button><button id="view-cuts" role="tab" aria-selected="false" tabindex="-1" aria-controls="canvas-panel" data-view="cuts">Cut map</button><button id="view-layout" role="tab" aria-selected="false" tabindex="-1" aria-controls="canvas-panel" data-view="layout">Layout map</button></div><button id="export" class="export-button" disabled>Export PNG ↓</button></div>
+    <div id="canvas-panel" class="canvas-panel" role="tabpanel" aria-labelledby="view-collage">
+      <div class="paper-wrap"><canvas id="artwork" width="1000" height="1400" role="img" aria-label="Collage canvas"></canvas><div id="empty-canvas" class="empty-canvas"><span class="empty-symbol" aria-hidden="true">φ</span><h2>The composition is ready.<br>Bring the images.</h2><p>Search for a subject or upload your own pictures.<br>Keep a few in the pool to make your first collage.</p><button id="empty-upload">＋ Add images</button></div></div>
+    </div>
+    <div class="canvas-caption"><p id="canvas-info">A composition waiting for material.</p><button id="credits-button" disabled>Source credits ↗</button></div>
+    <section class="pool-section" aria-labelledby="pool-title">
+      <div class="pool-heading"><div><span class="step">03</span><h2 id="pool-title">Your image pool <span id="pool-count">0 / 24</span></h2></div><div><button id="pool-select-all" disabled>Use all</button><button id="clear-pool" disabled>Clear pool</button></div></div>
+      <p id="pool-note" class="small-note">Collect from different searches. Uncheck an image to keep it for later.</p>
+      <div id="pool" class="pool"><div class="pool-placeholder"><span>＋</span><p>Your material lives here.<br>Search results join the pool when you choose <strong>Add</strong>.</p></div></div>
+      <p id="storage-status" class="small-note" role="status"></p>
+    </section>
+    <footer class="studio-footer"><span>MATHEMATICS SETS THE LAYOUT. YOU CHOOSE THE MATERIAL.</span><span>ALPHA 0.1</span></footer>
+  </section>
+</main>
+<input id="upload-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" multiple hidden>
+<input id="project-input" type="file" accept=".json,application/json" hidden>
+<dialog id="credits-dialog"><div class="dialog-heading"><h2>Source credits</h2><button id="close-credits" aria-label="Close source credits">×</button></div><p>Credits for images used in this composition. The images have been cut, cropped and rearranged.</p><div id="credits-list"></div><button id="download-credits" class="primary">Download credits ↓</button></dialog>
+<div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+<noscript><p class="no-script">Algo Collage needs JavaScript enabled to compose images.</p></noscript>
+</body>
+</html>
