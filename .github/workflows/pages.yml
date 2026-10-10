@@ -1,0 +1,57 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check the collage engine and exports
+        run: npm test
+      - name: Check JavaScript syntax
+        run: |
+          for file in js/*.js vendor/algoart/*.js; do
+            node --check "$file"
+          done
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Stage the static application
+        run: |
+          mkdir -p _site
+          cp index.html favicon.svg .nojekyll _site/
+          cp -R css js fonts vendor _site/
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -32,7 +32,7 @@ python3 -m http.server 8000
 
 Open **http://localhost:8000/**. On Windows, use `py -m http.server 8000` if appropriate. Serve over HTTP rather than opening `index.html` as a local file.
 
-For GitHub Pages, enable **Settings → Pages → Deploy from a branch → main → / (root)** after the prototype is on `main`. All asset paths are relative, so the repository subpath works. A deployed URL has not yet been verified.
+For GitHub Pages, select **Settings → Pages → Source → GitHub Actions**. The Pages workflow tests the application and publishes its static assets whenever `main` changes; it can also be run manually. All asset paths are relative, so the repository subpath works.
 
 ## Images and licences
 
