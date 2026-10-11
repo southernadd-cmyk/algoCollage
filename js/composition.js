@@ -18,7 +18,7 @@ export function sanitiseSettings(input = {}) {
     if (typeof input[k] === 'string' && input[k].trim()) out[k] = input[k].trim().slice(0, 80);
   }
   for (const k of ['cutMode', 'layoutMode']) if (MODES.includes(input[k])) out[k] = input[k];
-  if (['subjects', 'regions', 'geometric'].includes(input.cutStyle)) out.cutStyle = input.cutStyle;
+  if (['subjects', 'regions', 'geometric', 'manual'].includes(input.cutStyle)) out.cutStyle = input.cutStyle;
   if (['portrait', 'landscape', 'square'].includes(input.orientation)) out.orientation = input.orientation;
   for (const [k, lo, hi] of [['detail', 8, 60], ['pieces', 6, 48], ['negativeSpace', 0, 90], ['rotation', 0, 60], ['scale', 60, 230], ['cutSize', 35, 100]]) {
     if (Number.isFinite(input[k])) out[k] = Math.round(clamp(input[k], lo, hi));
@@ -146,7 +146,7 @@ export function makeScene(A, input, images, cuts = null, layout = null) {
   const maskOrder = cuts.masks.slice();
   for (let i = maskOrder.length - 1; i > 0; i--) { const j = r.int(0, i); [maskOrder[i], maskOrder[j]] = [maskOrder[j], maskOrder[i]]; }
   const imageCuts = settings.cutStyle === 'geometric' ? {} : Object.fromEntries(images.map(image=>[image.id,makeImageCuts(cuts,settings,image)]));
-  const pieces = order.length ? layout.slots.map((slot, i) => {
+  const pieces = order.length && settings.cutStyle!=='manual' ? layout.slots.map((slot, i) => {
     const image = order[i % order.length];
     // Cycle through a source's complete cut map before reusing its fragments.
     const sourceMasks = imageCuts[image.id]?.masks || maskOrder;
