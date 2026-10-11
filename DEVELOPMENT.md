@@ -70,3 +70,13 @@ The **Assembly Board** is a separate stage: the transferred cutouts are placed *
 
 The earlier browser-wide auto-fill path still exists internally for compatibility, but the new creative workflow uses only explicitly transferred fragments.
 
+
+## Cutting method clarity and strict stage separation — 0.6
+
+**Cutting controls live exclusively in the Cutting Room modal.** The material sidebar contains only search, upload and a shortcut to the cutting workspace. Board-specific settings (layout seed, baseline family, maximum pieces, quiet space, rotation, piece scale, canvas, paper, shadows and monochrome) now appear below the **Assembly Board**, beside the actual composition. The board's tabs only switch between Collage and Layout map; returning to the Cutting Room is a separate navigation action, not a third board view.
+
+A recognised subject is no longer silently recycled by every cutting option. **Recognised objects & faces** in *whole subject* mode retains the detected true outline, so it deliberately disables geometry controls which cannot modify it. Unticking *Keep whole subjects* creates three smaller, different ALGO/ART-influenced detail windows clipped to the same recognised silhouette. **Photographic fragments** ignore subject detection and extract multiple smaller, source-space image regions. **Geometric shapes** ignore recognition and cut with the original ALGO/ART closed polygons. Each mode has an explanatory live description and its own candidate previews.
+
+Changing a cutting option regenerates the proposed cutouts and removes any **stale, untransferred** candidates left in the Cutting Room tray. It never silently re-cuts pieces that have already reached the Assembly Board. The tray also has a dedicated Clear selection control. That distinction is explicit because the source material and the artwork belong to different stages.
+
+The regression suite asserts that the main board has no cutting controls, that Mona Lisa's detected head becomes a whole silhouette versus three different details versus larger photo fragments (without subject alpha), and that method-specific controls become enabled/disabled appropriately. The live Chrome smoke test checks actual Mona Lisa image changes across all modes and records separate screenshots.
