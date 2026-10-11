@@ -1,6 +1,7 @@
 import { sanitiseSettings, makeCuts, makeLayout, makeScene } from './composition.js';
 import { searchImages, fetchImage, MAX_IMAGES, MAX_IMAGE_BYTES, MAX_PROJECT_BYTES, RASTER_TYPES, creditsText } from './sources.js';
-import { readPool, writePool, readSettings, writeSettings, projectDocument, validateProject } from './storage.js';
+import { readWorkspace, writeWorkspace, readSettings, writeSettings, projectDocument, validateProject } from './storage.js';
+import { MAX_LOCKED_LAYERS, pickSpreadBaseline, captureLayer, combineLayers, guideForLayer, referencedLayerImages, validateLockedLayers } from './layer-stack.js';
 import { renderCollage, renderCutMap, renderLayoutMap } from './render.js';
 import { pngWithCredits } from './png.js';
 import { SubjectAnalyser } from './analysis.js';
@@ -12,6 +13,7 @@ const $=id=>document.getElementById(id);
 const A=window.AlgoArt;
 let settings=readSettings(), images=[], scene=null, view='collage';
 let cuts=null, layout=null, cutKey='', layoutKey='', fragmentCache=new Map();
+let currentScene=null,lockedLayers=[],previewLayerId='current';
 let searchController=null, searchSerial=0, searchState=null, searchResults=[], adding=new Set();
 let persistQueue=Promise.resolve(), frame=null, noticeTimer=null, hydrating=true;
 const analyser=new SubjectAnalyser(),analysisStates=new Map();
@@ -36,8 +38,8 @@ function rememberSettings() {
   try {writeSettings(settings);}catch {$('storage-status').textContent='Settings could not be saved in this browser. Save a project file to keep them.';}
 }
 function persist() {
-  const snapshot=images.slice();
-  persistQueue=persistQueue.catch(()=>{}).then(()=>writePool(snapshot)).then(()=>{
+  const snapshot=images.slice(),layerSnapshot=lockedLayers.slice();
+  persistQueue=persistQueue.catch(()=>{}).then(()=>writeWorkspace(snapshot,layerSnapshot)).then(()=>{
     $('storage-status').textContent='Pool saved in this browser. Save a project for a portable copy.';
     $('storage-status').classList.remove('error');
   }).catch(()=>{
@@ -47,7 +49,7 @@ function persist() {
   return persistQueue;
 }
 
-const controlMap={cutMode:'cut-mode',layoutMode:'layout-mode',cutSeed:'cut-seed',layoutSeed:'layout-seed',
+const controlMap={cutMode:'cut-mode',cutSeed:'cut-seed',layoutSeed:'layout-seed',
   orientation:'orientation',paper:'paper',pieces:'pieces',detail:'detail',negativeSpace:'negative-space',
   scale:'scale',rotation:'rotation',shadow:'shadow',monochrome:'monochrome',cutStyle:'cut-style',cutSize:'cut-size',wholeSubjects:'whole-subjects'};
 function syncControls() {
@@ -57,6 +59,8 @@ function syncControls() {
   }
   $('whole-subjects').disabled=settings.cutStyle!=='subjects';
   $('cut-size').disabled=settings.cutStyle==='geometric';
+  $('orientation').disabled=lockedLayers.length>0;
+  $('baseline-kind').textContent={field:'Orbital studies',geometric:'Constructed forms',rects:'Recursive divisions'}[settings.layoutMode]||'ALGO/ART';
   updateAnalysisStatus();
 }
 function rebuild() {
@@ -68,29 +72,37 @@ function rebuild() {
       const nextLayoutKey=JSON.stringify([settings.layoutMode,settings.layoutSeed,settings.pieces,settings.orientation,settings.negativeSpace,settings.rotation]);
       if(nextCutKey!==cutKey) {cuts=makeCuts(A,settings);cutKey=nextCutKey;fragmentCache.clear();}
       if(nextLayoutKey!==layoutKey) {layout=makeLayout(A,settings);layoutKey=nextLayoutKey;}
-      scene=makeScene(A,settings,images,cuts,layout);draw();ensureAnalysis();
+      currentScene=makeScene(A,settings,images,cuts,layout);
+      scene=combineLayers(currentScene,lockedLayers);
+      renderLayerList();draw();ensureAnalysis();
     } catch(error) {notice('The composition could not be created: '+error.message,true);}
   });
 }
 function draw() {
   if(!scene)return;
   const canvas=$('artwork'), active=images.filter(i=>i.enabled!==false);
-  if(view==='cuts')renderCutMap(canvas,scene,images,{scale:0.7,imageId:previewImageId});
-  else if(view==='layout')renderLayoutMap(canvas,scene,{scale:0.7});
+  const guide=guideForLayer(currentScene,lockedLayers,previewLayerId);
+  if(view==='cuts')renderCutMap(canvas,currentScene,images,{scale:0.7,imageId:previewImageId});
+  else if(view==='layout')renderLayoutMap(canvas,guide,{scale:0.7});
   else renderCollage(canvas,scene,images,{scale:1,cache:fragmentCache});
-  $('empty-canvas').hidden=active.length>0 || view!=='collage';
+  $('empty-canvas').hidden=scene.pieces.length>0 || view!=='collage';
   $('export').disabled=scene.pieces.length===0;
   $('credits-button').disabled=scene.pieces.length===0;
-  const inspected=images.find(i=>i.id===previewImageId)||active[0]||images[0],source=scene.imageCuts[inspected?.id];
+  const inspected=images.find(i=>i.id===previewImageId)||active[0]||images[0],source=currentScene.imageCuts[inspected?.id];
+  const selectedGuide=lockedLayers.find(l=>l.id===previewLayerId);
+  $('layout-inspector').hidden=view!=='layout';
+  $('layout-guide-name').textContent=selectedGuide?selectedGuide.name+' · locked':'Active layer · editable';
+  $('layout-guide-meta').textContent=guide.layout.strategy+' · '+guide.layout.slots.length+' positions';
   canvas.setAttribute('aria-label',view==='cuts' ? 'Cut map: '+(source?.masks.length||cuts.masks.length)+' '+(source?.kind||'geometric')+' cuts'+(inspected?' from '+inspected.title:'') :
-    view==='layout' ? 'Layout map: '+layout.slots.length+' positions from '+layout.strategy :
+    view==='layout' ? 'Layout map for '+(selectedGuide?.name||'active layer')+': '+guide.layout.slots.length+' positions from '+guide.layout.strategy :
     'Collage of '+scene.pieces.length+' fragments from '+active.length+' active images');
   const subjectCount=scene.pieces.filter(p=>p.mask.kind==='subject').length;
   $('canvas-info').textContent=view==='cuts' ? source ? `${source.masks.length} ${source.kind==='subjects'?'subject outlines':source.kind==='details'?'bounded source details':'large fragments'} · ${source.width} × ${source.height} source · guided by ${cuts.strategy}` : `${cuts.masks.length} geometric cut shapes · ${cuts.strategy}` :
-    view==='layout' ? `${layout.slots.length} positions · ${layout.strategy} · ${layout.width} × ${layout.height}` :
-    `${scene.pieces.length} pieces${subjectCount?' · '+subjectCount+' subject cuts':''} · ${new Set(scene.pieces.map(p=>p.imageId)).size} images used · ${layout.width} × ${layout.height}`;
+    view==='layout' ? `${selectedGuide?.name||'Active layer'} · ${guide.layout.slots.length} positions · ${guide.layout.strategy} · ${guide.layout.width} × ${guide.layout.height}` :
+    `${scene.pieces.length} pieces across ${lockedLayers.length+1} layer${lockedLayers.length?'s':''}${subjectCount?' · '+subjectCount+' subject cuts':''} · ${new Set(scene.pieces.map(p=>p.imageId)).size} images used · ${layout.width} × ${layout.height}`;
   $('cut-inspector').hidden=view!=='cuts'||!images.length;
   $('pick-subject').disabled=settings.cutStyle!=='subjects'||!inspected||analysisStates.get(inspected)?.busy===true;
+  $('lock-layer').disabled=!currentScene.pieces.length||lockedLayers.length>=MAX_LOCKED_LAYERS;
   canvas.classList.toggle('picking',picking&&view==='cuts');
 }
 function poolChanged() {fragmentCache.clear();renderPool();renderResults();syncInspector();updateAnalysisStatus();rebuild();void persist();}
