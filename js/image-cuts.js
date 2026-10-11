@@ -1,4 +1,55 @@
-import {clamp,overlap} from './subject-data.js';
+import {clamp,overlap,decodeMask} from './subject-data.js';
+
+// A compact, source-space occupancy map preserves the *actual* silhouette
+// when comparing ALGO/ART selection territories. Bounding boxes alone can
+// select an empty hole in a subject (or the wrong object altogether).
+const GRID=64;
+const foregroundCache=new WeakMap();
+function foregroundGrid(subject) {
+  const mask=subject.mask;
+  if(!mask)return null;
+  if(foregroundCache.has(mask))return foregroundCache.get(mask);
+  const cells=new Uint32Array(GRID*GRID),pixels=decodeMask(mask);
+  let total=0;
+  for(let y=0;y<mask.height;y++)for(let x=0;x<mask.width;x++) {
+    if(!pixels[y*mask.width+x])continue;
+    const gx=Math.min(GRID-1,Math.floor((x+.5)*GRID/mask.width));
+    const gy=Math.min(GRID-1,Math.floor((y+.5)*GRID/mask.height));
+    cells[gy*GRID+gx]++;total++;
+  }
+  const result={cells,total};
+  foregroundCache.set(mask,result);
+  return result;
+}
+function foregroundInside(grid,region) {
+  const x0=Math.max(0,Math.floor(region.x*GRID));
+  const y0=Math.max(0,Math.floor(region.y*GRID));
+  const x1=Math.min(GRID,Math.ceil((region.x+region.w)*GRID));
+  const y1=Math.min(GRID,Math.ceil((region.y+region.h)*GRID));
+  let count=0,sumX=0,sumY=0;
+  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+    const n=grid.cells[y*GRID+x];if(!n)continue;
+    count+=n;sumX+=(x+.5)/GRID*n;sumY+=(y+.5)/GRID*n;
+  }
+  return {count,point:count?{x:sumX/count,y:sumY/count}:null};
+}
+function foregroundPoint(subject,region) {
+  const grid=foregroundGrid(subject);
+  if(!grid?.total)return null;
+  const inside=foregroundInside(grid,region);
+  if(inside.count)return inside.point;
+  // A guide can fall in a hole or just outside the silhouette. Seek its
+  // nearest visible part instead of clipping a window around empty pixels.
+  const cx=region.x+region.w/2,cy=region.y+region.h/2;
+  let best=Infinity,point=null;
+  for(let y=0;y<GRID;y++)for(let x=0;x<GRID;x++) {
+    if(!grid.cells[y*GRID+x])continue;
+    const fx=(x+.5)/GRID,fy=(y+.5)/GRID;
+    const distance=(fx-cx)**2+(fy-cy)**2;
+    if(distance<best){best=distance;point={x:fx,y:fy};}
+  }
+  return point;
+}
 
 const rectangle=b=>[{x:b.x,y:b.y},{x:b.x+b.w,y:b.y},{x:b.x+b.w,y:b.y+b.h},{x:b.x,y:b.y+b.h}];
 export function guideRegions(cuts) {
@@ -14,7 +65,10 @@ export function rankedSubjects(subjects,regions) {
     const cx=region.x+region.w/2,cy=region.y+region.h/2;
     const score=subject=>{
       const b=subject.bounds,distance=Math.hypot(cx-b.x-b.w/2,cy-b.y-b.h/2);
-      return overlap(region,b)/Math.max(0.001,b.w*b.h)-distance*.45+(subject.manual ? .35 : 0);
+      const grid=foregroundGrid(subject);
+      const coverage=grid?.total?foregroundInside(grid,region).count/grid.total:
+        overlap(region,b)/Math.max(0.001,b.w*b.h);
+      return coverage-distance*.45+(subject.manual ? .35 : 0);
     };
     let best=0;for(let i=1;i<remaining.length;i++)if(score(remaining[i])>score(remaining[best]))best=i;
     ranked.push({subject:remaining.splice(best,1)[0],region});
@@ -28,7 +82,9 @@ function windowIn(box,region,coverage) {
     y:clamp(region.y+region.h/2-h/2,box.y,box.y+box.h-h),w,h};
 }
 export function partialSubjectBounds(subject,region,size,faces=[]) {
-  const box=subject.bounds,window=windowIn(box,region,.45+size/200);
+  const box=subject.bounds,focus=foregroundPoint(subject,region);
+  const target=focus?{x:focus.x,y:focus.y,w:0,h:0}:region;
+  const window=windowIn(box,target,.45+size/200);
   // Expand any partial cut that intersects a face to include that face in full.
   for(const face of faces)if(overlap(window,face)>0&&overlap(box,face)>face.w*face.h*.65) {
     const x=Math.max(box.x,Math.min(window.x,face.x-face.w*.12));
