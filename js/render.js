@@ -70,7 +70,7 @@ export function renderCutMap(canvas,scene,images,{scale=0.5,imageId=null}={}) {
     ctx.globalAlpha=.62;ctx.drawImage(selected.element,0,0,source.width,source.height);ctx.globalAlpha=1;
     // Faint engine outlines show the selection regions, not the final scissors.
     ctx.setLineDash([8,6]);ctx.strokeStyle='rgba(35,65,49,.38)';ctx.lineWidth=2;
-    for(const guide of scene.cuts.masks) {path(ctx,guide.points.map(p=>({x:p.x/scene.cuts.width*source.width,y:p.y/scene.cuts.height*source.height})));ctx.stroke();}
+    if(source.kind!=='manual')for(const guide of scene.cuts.masks) {path(ctx,guide.points.map(p=>({x:p.x/scene.cuts.width*source.width,y:p.y/scene.cuts.height*source.height})));ctx.stroke();}
     ctx.setLineDash([]);
     source.masks.forEach((mask,i)=>{
       if(mask.alpha) {
