@@ -63,7 +63,7 @@ export function captureLayer(scene,id,name) {
     }))};
 }
 export function combineLayers(activeScene,layers=[]) {
-  return {...activeScene,pieces:[...layers.flatMap(layer=>layer.pieces),...activeScene.pieces]};
+  return {...activeScene,lockedGuideHistory:layers.map(layer=>({name:layer.name,seed:layer.settings.layoutSeed,mode:layer.settings.layoutMode,strategy:layer.layout.strategy})),pieces:[...layers.flatMap(layer=>layer.pieces),...activeScene.pieces]};
 }
 export function guideForLayer(activeScene,layers,id) {
   if(id==='current')return activeScene;
