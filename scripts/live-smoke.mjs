@@ -90,8 +90,8 @@ try {
     assert.equal(await sources.count(),fixtures.length);
     await page.locator('#cutout-candidates .cutout-card').first().waitFor();
     assert.ok(await page.locator('#cut-mode').isVisible(),'Cut geometry controls must live inside the cutting modal');
-    assert.equal(await page.locator('.assembly-settings').isVisible(),false,
-      'Assembly controls should be blocked by the modal');
+    assert.ok(await page.locator('#cut-mode').evaluate(el=>el.closest('#cut-room')!==null),
+      'All scissor tools belong inside the Cutting Room, not the board');
     if(painting){
       const monaIndex=fixtures.findIndex(f=>f.name==='mona-lisa.jpg');
       await sources.nth(monaIndex).click();
