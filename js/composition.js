@@ -1,6 +1,6 @@
 // Adapt the unchanged ALGO/ART V7 engine, rather than approximating its layouts.
 import {makeImageCuts} from './image-cuts.js';
-export const COLLAGE_VERSION = 2;
+export const COLLAGE_VERSION = 3;
 export const ENGINE_COMMIT = 'd231259ad08a690c1109a6af7f624c769c50eadc';
 export const DEFAULTS = Object.freeze({
   orientation: 'portrait', cutMode: 'geometric', layoutMode: 'field',

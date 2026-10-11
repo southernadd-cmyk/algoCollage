@@ -10,3 +10,21 @@
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 .cut-options{margin:16px 0 20px}.subject-check{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:400}.subject-check input{accent-color:var(--green)}.cut-options>.wide{font-size:11px;margin-bottom:4px}.cut-options .small-note{margin:10px 0}.engine-choices{margin-bottom:18px}.cut-inspector{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--paper);padding:12px 14px;border:1px solid var(--line);border-bottom:0}.cut-inspector label{margin:0;font-size:11px}.cut-inspector select{width:auto;max-width:360px;flex:1;font-size:11px;padding:8px}.cut-inspector button{font-size:11px;white-space:nowrap}.cut-inspector [aria-pressed=true]{background:var(--lime);border-color:var(--green)}.cut-inspector p{flex-basis:100%;margin:0}.paper-wrap canvas.picking{cursor:crosshair;outline:3px solid var(--rust);outline-offset:4px}.analysis-badge{display:block;font:9px 'Courier New',monospace;color:var(--green);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:5px}.inspect-image{border:0;font-size:9px;padding:0;margin:0 0 7px;text-decoration:underline;text-underline-offset:3px;display:block}.pool-card{flex-basis:132px}.pool-card>img{width:132px;height:120px}
 @media(max-width:740px){.cut-inspector select{max-width:100%;min-width:120px}.cut-inspector{gap:8px}}
+
+
+/* Seeded baseline and frozen multi-layer controls. */
+.baseline-kind{margin:5px 0 0;padding:9px 7px;border:1px dashed var(--line);background:#e8e9db;font-size:11px;min-height:37px;display:flex;align-items:center}
+.layer-stack{border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:16px 0 18px;padding:15px 0}
+.layer-stack h3{font:22px var(--marker);font-feature-settings:'calt' 1;letter-spacing:0;font-weight:400;margin:0 0 7px}
+.layer-stack>p{margin:0 0 11px}
+.layer-stack>.wide{font-size:12px;margin-bottom:12px}
+.layer-list{display:flex;flex-direction:column;gap:5px}
+.layer-item{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px;align-items:center;padding:8px;background:#e7e9dd;border-left:3px solid #a9b3a1}
+.layer-item.active{border-left-color:var(--rust)}
+.layer-item.selected{outline:1px solid var(--green)}
+.layer-item .layer-name{font:11px 'Courier New',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.layer-item button{font-size:10px;padding:5px 7px;white-space:nowrap}
+.layer-item button[aria-pressed=true]{background:var(--green);color:white}
+.layout-inspector{background:var(--paper);border:1px solid var(--line);border-bottom:0;display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap;padding:10px 14px;font-size:11px}
+.layout-inspector span:last-child{color:var(--muted);font:10px 'Courier New',monospace}
+@media(max-width:740px){.layer-item{grid-template-columns:minmax(0,1fr) auto auto}.layout-inspector{padding:8px 10px}}

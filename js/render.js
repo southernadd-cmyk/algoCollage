@@ -27,7 +27,7 @@ export function fragmentCanvas(piece,cuts,image) {
   const canvas=document.createElement('canvas'); canvas.width=Math.ceil(bounds.w);canvas.height=Math.ceil(bounds.h);
   const ctx=canvas.getContext('2d');ctx.translate(-bounds.x,-bounds.y);path(ctx,points);ctx.clip();
   if(piece.mask.sourceWidth)ctx.drawImage(image.element,0,0,piece.mask.sourceWidth,piece.mask.sourceHeight);
-  else coverImage(ctx,image.element,0,0,cuts.width,cuts.height);
+  else coverImage(ctx,image.element,0,0,(piece.layerCuts||cuts).width,(piece.layerCuts||cuts).height);
   if(piece.mask.alpha) {
     ctx.globalCompositeOperation='destination-in';
     ctx.drawImage(alphaCanvas(piece.mask.alpha),0,0,piece.mask.sourceWidth,piece.mask.sourceHeight);
@@ -41,18 +41,18 @@ export function renderCollage(canvas,scene,images,{scale=1,cache=new Map()}={}) 
   const lookup=new Map(images.map(i=>[i.id,i]));
   for (const piece of pieces) {
     const image=lookup.get(piece.imageId); if (!image?.element) continue;
-    const {bounds,points}=piece.mask, p=piece.slot;
-    let factor=p.w ? Math.min(p.w/bounds.w,p.h/bounds.h)*0.92*(settings.scale/165) : p.size/bounds.w*(settings.scale/100);
-    if(settings.cutStyle!=='geometric'&&!p.w) {
-      const minimum=layout.width*(p.tier==='hero'?.28:p.tier==='medium'?.22:.18)*(settings.scale/165);
+    const {bounds,points}=piece.mask, p=piece.slot,style=piece.layerSettings||settings;
+    let factor=p.w ? Math.min(p.w/bounds.w,p.h/bounds.h)*0.92*(style.scale/165) : p.size/bounds.w*(style.scale/100);
+    if(style.cutStyle!=='geometric'&&!p.w) {
+      const minimum=layout.width*(p.tier==='hero'?.28:p.tier==='medium'?.22:.18)*(style.scale/165);
       factor=Math.max(factor,Math.min(minimum/bounds.w,layout.height*.48/bounds.h));
     }
     factor=Math.min(factor,layout.width*0.8/bounds.w,layout.height*0.65/bounds.h);
     let fragment=cache.get(piece.fragmentId);
     if (!fragment) {fragment=fragmentCanvas(piece,cuts,image);cache.set(piece.fragmentId,fragment);}
     ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.rot);
-    if (settings.monochrome) ctx.filter='grayscale(1)';
-    if (settings.shadow) {ctx.shadowColor='rgba(30,23,16,.25)';ctx.shadowBlur=11;ctx.shadowOffsetX=4;ctx.shadowOffsetY=6;}
+    if (style.monochrome) ctx.filter='grayscale(1)';
+    if (style.shadow) {ctx.shadowColor='rgba(30,23,16,.25)';ctx.shadowBlur=11;ctx.shadowOffsetX=4;ctx.shadowOffsetY=6;}
     ctx.drawImage(fragment,-bounds.w*factor/2,-bounds.h*factor/2,bounds.w*factor,bounds.h*factor);
     ctx.shadowColor='transparent';ctx.filter='none';ctx.scale(factor,factor);ctx.translate(-bounds.w/2,-bounds.h/2);
     if(!piece.mask.alpha){path(ctx,points,bounds.x,bounds.y);ctx.strokeStyle='rgba(255,252,243,.78)';ctx.lineWidth=1.5/Math.max(factor,0.2);ctx.stroke();}

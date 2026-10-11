@@ -1,6 +1,7 @@
 import { sanitiseSettings, makeCuts, makeLayout, makeScene } from './composition.js';
 import { searchImages, fetchImage, MAX_IMAGES, MAX_IMAGE_BYTES, MAX_PROJECT_BYTES, RASTER_TYPES, creditsText } from './sources.js';
-import { readPool, writePool, readSettings, writeSettings, projectDocument, validateProject } from './storage.js';
+import { readWorkspace, writeWorkspace, readSettings, writeSettings, projectDocument, validateProject } from './storage.js';
+import { MAX_LOCKED_LAYERS, pickSpreadBaseline, captureLayer, combineLayers, guideForLayer, referencedLayerImages, validateLockedLayers } from './layer-stack.js';
 import { renderCollage, renderCutMap, renderLayoutMap } from './render.js';
 import { pngWithCredits } from './png.js';
 import { SubjectAnalyser } from './analysis.js';
@@ -12,6 +13,7 @@ const $=id=>document.getElementById(id);
 const A=window.AlgoArt;
 let settings=readSettings(), images=[], scene=null, view='collage';
 let cuts=null, layout=null, cutKey='', layoutKey='', fragmentCache=new Map();
+let currentScene=null,lockedLayers=[],previewLayerId='current';
 let searchController=null, searchSerial=0, searchState=null, searchResults=[], adding=new Set();
 let persistQueue=Promise.resolve(), frame=null, noticeTimer=null, hydrating=true;
 const analyser=new SubjectAnalyser(),analysisStates=new Map();
@@ -36,8 +38,8 @@ function rememberSettings() {
   try {writeSettings(settings);}catch {$('storage-status').textContent='Settings could not be saved in this browser. Save a project file to keep them.';}
 }
 function persist() {
-  const snapshot=images.slice();
-  persistQueue=persistQueue.catch(()=>{}).then(()=>writePool(snapshot)).then(()=>{
+  const snapshot=images.slice(),layerSnapshot=lockedLayers.slice();
+  persistQueue=persistQueue.catch(()=>{}).then(()=>writeWorkspace(snapshot,layerSnapshot)).then(()=>{
     $('storage-status').textContent='Pool saved in this browser. Save a project for a portable copy.';
     $('storage-status').classList.remove('error');
   }).catch(()=>{
@@ -47,7 +49,7 @@ function persist() {
   return persistQueue;
 }
 
-const controlMap={cutMode:'cut-mode',layoutMode:'layout-mode',cutSeed:'cut-seed',layoutSeed:'layout-seed',
+const controlMap={cutMode:'cut-mode',cutSeed:'cut-seed',layoutSeed:'layout-seed',
   orientation:'orientation',paper:'paper',pieces:'pieces',detail:'detail',negativeSpace:'negative-space',
   scale:'scale',rotation:'rotation',shadow:'shadow',monochrome:'monochrome',cutStyle:'cut-style',cutSize:'cut-size',wholeSubjects:'whole-subjects'};
 function syncControls() {
@@ -57,6 +59,8 @@ function syncControls() {
   }
   $('whole-subjects').disabled=settings.cutStyle!=='subjects';
   $('cut-size').disabled=settings.cutStyle==='geometric';
+  $('orientation').disabled=lockedLayers.length>0;
+  $('baseline-kind').textContent={field:'Orbital studies',geometric:'Constructed forms',rects:'Recursive divisions'}[settings.layoutMode]||'ALGO/ART';
   updateAnalysisStatus();
 }
 function rebuild() {
@@ -68,32 +72,65 @@ function rebuild() {
       const nextLayoutKey=JSON.stringify([settings.layoutMode,settings.layoutSeed,settings.pieces,settings.orientation,settings.negativeSpace,settings.rotation]);
       if(nextCutKey!==cutKey) {cuts=makeCuts(A,settings);cutKey=nextCutKey;fragmentCache.clear();}
       if(nextLayoutKey!==layoutKey) {layout=makeLayout(A,settings);layoutKey=nextLayoutKey;}
-      scene=makeScene(A,settings,images,cuts,layout);draw();ensureAnalysis();
+      currentScene=makeScene(A,settings,images,cuts,layout);
+      scene=combineLayers(currentScene,lockedLayers);
+      renderLayerList();draw();ensureAnalysis();
     } catch(error) {notice('The composition could not be created: '+error.message,true);}
   });
 }
 function draw() {
   if(!scene)return;
   const canvas=$('artwork'), active=images.filter(i=>i.enabled!==false);
-  if(view==='cuts')renderCutMap(canvas,scene,images,{scale:0.7,imageId:previewImageId});
-  else if(view==='layout')renderLayoutMap(canvas,scene,{scale:0.7});
+  const guide=guideForLayer(currentScene,lockedLayers,previewLayerId);
+  if(view==='cuts')renderCutMap(canvas,currentScene,images,{scale:0.7,imageId:previewImageId});
+  else if(view==='layout')renderLayoutMap(canvas,guide,{scale:0.7});
   else renderCollage(canvas,scene,images,{scale:1,cache:fragmentCache});
-  $('empty-canvas').hidden=active.length>0 || view!=='collage';
+  $('empty-canvas').hidden=scene.pieces.length>0 || view!=='collage';
   $('export').disabled=scene.pieces.length===0;
   $('credits-button').disabled=scene.pieces.length===0;
-  const inspected=images.find(i=>i.id===previewImageId)||active[0]||images[0],source=scene.imageCuts[inspected?.id];
+  const inspected=images.find(i=>i.id===previewImageId)||active[0]||images[0],source=currentScene.imageCuts[inspected?.id];
+  const selectedGuide=lockedLayers.find(l=>l.id===previewLayerId);
+  $('layout-inspector').hidden=view!=='layout';
+  $('layout-guide-name').textContent=selectedGuide?selectedGuide.name+' · locked':'Active layer · editable';
+  $('layout-guide-meta').textContent=guide.layout.strategy+' · '+guide.layout.slots.length+' positions';
   canvas.setAttribute('aria-label',view==='cuts' ? 'Cut map: '+(source?.masks.length||cuts.masks.length)+' '+(source?.kind||'geometric')+' cuts'+(inspected?' from '+inspected.title:'') :
-    view==='layout' ? 'Layout map: '+layout.slots.length+' positions from '+layout.strategy :
+    view==='layout' ? 'Layout map for '+(selectedGuide?.name||'active layer')+': '+guide.layout.slots.length+' positions from '+guide.layout.strategy :
     'Collage of '+scene.pieces.length+' fragments from '+active.length+' active images');
   const subjectCount=scene.pieces.filter(p=>p.mask.kind==='subject').length;
   $('canvas-info').textContent=view==='cuts' ? source ? `${source.masks.length} ${source.kind==='subjects'?'subject outlines':source.kind==='details'?'bounded source details':'large fragments'} · ${source.width} × ${source.height} source · guided by ${cuts.strategy}` : `${cuts.masks.length} geometric cut shapes · ${cuts.strategy}` :
-    view==='layout' ? `${layout.slots.length} positions · ${layout.strategy} · ${layout.width} × ${layout.height}` :
-    `${scene.pieces.length} pieces${subjectCount?' · '+subjectCount+' subject cuts':''} · ${new Set(scene.pieces.map(p=>p.imageId)).size} images used · ${layout.width} × ${layout.height}`;
+    view==='layout' ? `${selectedGuide?.name||'Active layer'} · ${guide.layout.slots.length} positions · ${guide.layout.strategy} · ${guide.layout.width} × ${guide.layout.height}` :
+    `${scene.pieces.length} pieces across ${lockedLayers.length+1} layer${lockedLayers.length?'s':''}${subjectCount?' · '+subjectCount+' subject cuts':''} · ${new Set(scene.pieces.map(p=>p.imageId)).size} images used · ${layout.width} × ${layout.height}`;
   $('cut-inspector').hidden=view!=='cuts'||!images.length;
   $('pick-subject').disabled=settings.cutStyle!=='subjects'||!inspected||analysisStates.get(inspected)?.busy===true;
+  $('lock-layer').disabled=!currentScene.pieces.length||lockedLayers.length>=MAX_LOCKED_LAYERS;
   canvas.classList.toggle('picking',picking&&view==='cuts');
 }
 function poolChanged() {fragmentCache.clear();renderPool();renderResults();syncInspector();updateAnalysisStatus();rebuild();void persist();}
+function renderLayerList() {
+  const root=$('layer-list');root.replaceChildren();
+  const addRow=(id,label,isCurrent)=>{
+    const row=element('div','layer-item'+(isCurrent?' active':'')+(previewLayerId===id?' selected':''));
+    const title=element('span','layer-name',label);
+    const guide=element('button',null,'View guide');guide.type='button';
+    guide.setAttribute('aria-pressed',String(previewLayerId===id));
+    guide.setAttribute('aria-label','View layout map for '+label);
+    guide.addEventListener('click',()=>{previewLayerId=id;renderLayerList();chooseView($('view-layout'));});
+    row.append(title,guide);
+    if(!isCurrent) {
+      const remove=element('button',null,'Remove');remove.type='button';
+      remove.setAttribute('aria-label','Remove '+label+' from collage');
+      remove.addEventListener('click',()=>{
+        lockedLayers=lockedLayers.filter(l=>l.id!==id);
+        if(previewLayerId===id)previewLayerId='current';
+        fragmentCache.clear();syncControls();rebuild();void persist();
+        notice(label+' removed. The other layers are unchanged.');
+      });row.append(remove);
+    }else row.append(element('span','layer-name','EDITING'));
+    root.append(row);
+  };
+  lockedLayers.forEach((layer,i)=>addRow(layer.id,layer.name||'Layer '+(i+1),false));
+  addRow('current','Layer '+(lockedLayers.length+1)+' · active',true);
+}
 
 function syncInspector() {
   const select=$('cut-preview-image');select.replaceChildren();
@@ -157,6 +194,7 @@ function renderPool() {
     const img=element('img');img.src=image.objectURL;img.alt=image.title;img.title=image.title;
     const remove=element('button','remove-image','×');remove.setAttribute('aria-label','Remove '+image.title+' from pool');
     remove.addEventListener('click',()=>{
+      if(referencedLayerImages(lockedLayers).has(image.id)){notice('This image belongs to a locked layer. Remove that layer before deleting the image.',true);return;}
       images=images.filter(i=>i!==image);URL.revokeObjectURL(image.objectURL);poolChanged();
     });
     const title=element('p',null,image.title);title.title=image.title;
@@ -290,7 +328,7 @@ async function exportPNG() {
 async function saveProject() {
   $('save-project').disabled=true;
   try {
-    const project=await projectDocument(settings,images),blob=new Blob([JSON.stringify(project)],{type:'application/json'});
+    const project=await projectDocument(settings,images,lockedLayers),blob=new Blob([JSON.stringify(project)],{type:'application/json'});
     if(blob.size>MAX_PROJECT_BYTES)throw new Error('This project is too large to save. Remove some images.');
     download(blob,filename('json'));notice('Project saved with its image pool, settings and seeds.');
   } catch(error){notice('Project save failed: '+error.message,true);}finally{$('save-project').disabled=false;}
@@ -307,21 +345,49 @@ async function openProject(file) {
       const {data,...metadata}=item;const blob=await (await fetch(data)).blob();const loaded=await imageElement(blob);
       next.push({...metadata,blob,...loaded});
     }
-    analyser.cancelAll();analysisStates.clear();images.forEach(i=>URL.revokeObjectURL(i.objectURL));images=next;next=[];settings=project.settings;
-    cutKey='';layoutKey='';syncControls();rememberSettings();poolChanged();notice('Project opened.');
+    analyser.cancelAll();analysisStates.clear();images.forEach(i=>URL.revokeObjectURL(i.objectURL));images=next;next=[];
+    settings=project.settings;lockedLayers=project.layers;previewLayerId='current';currentScene=null;
+    cutKey='';layoutKey='';syncControls();rememberSettings();poolChanged();notice('Project opened with '+lockedLayers.length+' locked layers.');
   } catch(error){next.forEach(i=>URL.revokeObjectURL(i.objectURL));notice('The project could not be opened: '+error.message,true);}
   finally{$('project-input').value='';}
 }
 
 for(const [key,id] of Object.entries(controlMap)) {
   const input=$(id);input.addEventListener(input.type==='range'?'input':'change',()=>{
+    if(key==='orientation'&&lockedLayers.length){syncControls();notice('Remove locked layers before changing the canvas orientation.',true);return;}
     const value=input.type==='checkbox'?input.checked:input.type==='range'?Number(input.value):input.value;
     settings=sanitiseSettings({...settings,[key]:value});fragmentCache.clear();syncControls();rememberSettings();rebuild();
   });
 }
 const regenerate=(key,prefix)=>{settings={...settings,[key]:newSeed(prefix)};syncControls();rememberSettings();rebuild();};
 $('recut').addEventListener('click',()=>regenerate('cutSeed','CUT'));
-$('recompose').addEventListener('click',()=>regenerate('layoutSeed','LAYOUT'));
+function nextBaseline() {
+  const modes=['field','geometric','rects'];
+  const candidates=Array.from({length:9},(_,i)=>({mode:modes[i%3],seed:newSeed('LAYOUT')}));
+  return pickSpreadBaseline(A,settings,candidates);
+}
+$('new-baseline').addEventListener('click',()=>{
+  try {
+    const result=nextBaseline();
+    settings=sanitiseSettings({...settings,layoutSeed:result.seed,layoutMode:result.mode});
+    previewLayerId='current';
+    $('baseline-note').textContent='Selected a well-spread '+({field:'orbital',geometric:'constructed',rects:'recursive'}[result.mode])+' guide from 9 new variants.';
+    syncControls();rememberSettings();rebuild();
+  }catch(error){notice('Could not generate a baseline: '+error.message,true);}
+});
+$('lock-layer').addEventListener('click',()=>{
+  if(lockedLayers.length>=MAX_LOCKED_LAYERS){notice('This canvas supports up to '+MAX_LOCKED_LAYERS+' locked layers.',true);return;}
+  try {
+    if(!currentScene?.pieces.length)throw new Error('Add images to the active layer before locking it.');
+    const next=nextBaseline();
+    const newLayer=captureLayer(currentScene,crypto.randomUUID(),'Layer '+(lockedLayers.length+1));
+    lockedLayers=[...lockedLayers,newLayer];
+    settings=sanitiseSettings({...settings,layoutMode:next.mode,layoutSeed:next.seed});
+    previewLayerId='current';fragmentCache.clear();
+    syncControls();rememberSettings();rebuild();void persist();
+    notice(newLayer.name+' locked. Layer '+(lockedLayers.length+1)+' has a new independent guide.');
+  }catch(error){notice('Could not lock the layer: '+error.message,true);}
+});
 $('shuffle-images').addEventListener('click',()=>regenerate('imageSeed','POOL'));
 $('search-form').addEventListener('submit',event=>{event.preventDefault();void doSearch();});
 document.querySelectorAll('[data-topic]').forEach(button=>button.addEventListener('click',()=>{$('query').value=button.dataset.topic;void doSearch();}));
@@ -334,7 +400,9 @@ $('project-input').addEventListener('change',()=>void openProject($('project-inp
 $('export').addEventListener('click',()=>void exportPNG());$('credits-button').addEventListener('click',showCredits);
 $('close-credits').addEventListener('click',()=>$('credits-dialog').close());
 $('download-credits').addEventListener('click',()=>download(new Blob([creditsText(scene,images)],{type:'text/plain;charset=utf-8'}),filename('credits.txt')));
-$('clear-pool').addEventListener('click',()=>{analyser.cancelAll();analysisStates.clear();images.forEach(i=>URL.revokeObjectURL(i.objectURL));images=[];poolChanged();});
+$('clear-pool').addEventListener('click',()=>{
+  if(lockedLayers.length){notice('Remove locked layers before clearing their source images.',true);return;}
+  analyser.cancelAll();analysisStates.clear();images.forEach(i=>URL.revokeObjectURL(i.objectURL));images=[];poolChanged();});
 $('pool-select-all').addEventListener('click',()=>{images.forEach(i=>i.enabled=true);poolChanged();});
 const tabs=Array.from(document.querySelectorAll('[data-view]'));
 function chooseView(button) {
@@ -372,14 +440,16 @@ document.addEventListener('drop',event=>{if(!event.dataTransfer.files.length)ret
 
 syncControls();
 try {
-  const stored=await readPool();
-  for(const item of stored.slice(0,MAX_IMAGES)) {
+  const stored=await readWorkspace();
+  for(const item of stored.images.slice(0,MAX_IMAGES)) {
     try {
       if(!(item.blob instanceof Blob)||!RASTER_TYPES.includes(item.blob.type))continue;
       let analysis;try{analysis=validateAnalysis(item.analysis);}catch{}
       images.push({...item,analysis,...await imageElement(item.blob)});
     }catch {notice('One saved image could not be reopened. The rest of your pool is available.',true);}
   }
-  $('storage-status').textContent='Pool saved in this browser. Save a project for a portable copy.';
+  try {lockedLayers=validateLockedLayers(stored.layers,images.map(i=>i.id),settings.orientation);}
+  catch(error){lockedLayers=[];notice('The saved layer stack could not be restored: '+error.message,true);}
+  $('storage-status').textContent='Pool and layers saved in this browser. Save a project for a portable copy.';
 } catch {$('storage-status').textContent='Browser storage is unavailable. Save a project file to keep your pool.';$('storage-status').classList.add('error');}
 hydrating=false;renderPool();syncInspector();updateAnalysisStatus();rebuild();
