@@ -49,6 +49,24 @@ try {
     await page.waitForFunction(()=>document.querySelector('#cut-style')?.value==='subjects',null,{timeout:15000});
     assert.match(await page.title(),/ALGO\/COLLAGE/);
   });
+  await stage('Collage desk visual structure and accessible controls',async()=>{
+    const structure=await page.evaluate(()=>{
+      const $=id=>document.getElementById(id);
+      const style=id=>getComputedStyle($(id));
+      const stage=$('canvas-panel').getBoundingClientRect(),rail=$('layer-list').getBoundingClientRect();
+      return {title:document.title,stylesheets:[...document.querySelectorAll('link[rel="stylesheet"]')].map(n=>n.getAttribute('href')),
+        actions:['new-baseline','lock-layer','shuffle-images','export'].every(id=>!!$(id)),
+        inkDesk:style('workbench').backgroundColor,stageX:stage.x,stageWidth:stage.width,
+        railX:rail.x,railWidth:rail.width,skipHref:document.querySelector('.jump-to-desk')?.getAttribute('href'),
+        layers:Array.from(document.querySelectorAll('#layer-list .layer-item')).length};
+    });
+    record('Collage desk structure: '+JSON.stringify(structure));
+    assert.ok(structure.stylesheets.includes('css/cut-paste.css'),'The cut-paper design is missing');
+    assert.ok(structure.actions,'A critical workbench action has disappeared');
+    assert.equal(structure.skipHref,'#workbench');
+    assert.ok(structure.railX>=structure.stageX+structure.stageWidth-5,'Layer rail is not adjacent to the stage on desktop');
+    await saveScreenshot('collage-desk-desktop');
+  });
   await stage('Photographs upload and trigger subject analysis',async()=>{
     await page.locator('#upload-input').setInputFiles(fixtures);
     await page.waitForFunction(count=>document.querySelectorAll('#pool .analysis-badge').length===count,fixtures.length,{timeout:30000});
@@ -139,6 +157,24 @@ try {
     await page.waitForFunction(count=>document.querySelectorAll('#pool .analysis-badge').length===count,fixtures.length,{timeout:30000});
     await page.waitForFunction(()=>document.querySelectorAll('#layer-list .layer-item').length===3);
     record('Round trip retained '+(await page.locator('#layer-list .layer-item').count())+' layer rows');
+  });
+  await stage('Responsive mobile collage desk remains usable',async()=>{
+    await page.setViewportSize({width:390,height:844});
+    await page.evaluate(()=>document.fonts.ready);
+    const dimensions=await page.evaluate(()=>{
+      const ids=['new-baseline','lock-layer','view-collage','view-layout','export','layer-list'];
+      return {clientWidth:document.documentElement.clientWidth,
+        scrollWidth:document.documentElement.scrollWidth,
+        controls:ids.map(id=>({id,exists:!!document.getElementById(id),width:document.getElementById(id)?.getBoundingClientRect().width||0}))};
+    });
+    record('Mobile width check: '+JSON.stringify(dimensions));
+    assert.ok(dimensions.scrollWidth<=dimensions.clientWidth+3,'Mobile layout overflows horizontally');
+    assert.ok(dimensions.controls.every(c=>c.exists&&c.width>0),'A key control is hidden or collapsed on mobile');
+    await page.locator('#new-baseline').click();
+    await page.locator('#view-layout').click();
+    assert.match(await page.locator('#layout-guide-name').innerText(),/Active layer/);
+    await saveScreenshot('collage-desk-mobile');
+    await page.setViewportSize({width:1440,height:950});
   });
   record('PASS all live Chrome photo/recognition/cut/export smoke checks');
   await saveScreenshot('final');
