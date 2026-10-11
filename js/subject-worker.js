@@ -58,10 +58,10 @@ async function analyse(job) {
     const faces=faceDetector.detect(canvas).detections.map(d=>normalBounds(d,width,height)).filter(Boolean).slice(0,12);
     const candidates=edgesTool.chooseCandidates(objects,faces,job.point);
     const subjects=[];
-    if(!candidates.length)return {version:helpers.ANALYSIS_VERSION,model:helpers.ANALYSIS_MODEL,subjects,faces};
-
     status(job.id,'Following local contours and edges…');
     const edges=edgesTool.sobelEdges(ctx.getImageData(0,0,width,height).data,width,height);
+    if(!candidates.length&&!job.point)candidates.push(...edgesTool.salientDetails(edges,width,height,1));
+    if(!candidates.length)return {version:helpers.ANALYSIS_VERSION,model:helpers.ANALYSIS_MODEL,subjects,faces};
     for(const candidate of candidates) {
       // A detected face is always a compact, edge-guided head detail, never
       // the full "person" mask or the painted background.
