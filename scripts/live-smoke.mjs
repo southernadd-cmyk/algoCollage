@@ -29,6 +29,12 @@ try {
   // recognition pipeline through file uploads without relying on CORS.
   const dog=await photo('https://picsum.photos/id/1025/650/500','dog.jpg');
   const person=await photo('https://picsum.photos/id/1005/650/500','person.jpg');
+  // Public-domain Mona Lisa thumbnail. Log the external-source failure, but do
+  // not mistake a Wikimedia CDN outage for a cutter regression.
+  const painting=await photo('https://thumb.wikimedia.org/wikipedia/commons/thumb/e/ec/Mona_Lisa%2C_by_Leonardo_da_Vinci%2C_from_C2RMF_retouched.jpg/500px-Mona_Lisa%2C_by_Leonardo_da_Vinci%2C_from_C2RMF_retouched.jpg','mona-lisa.jpg').catch(error=>{
+    record('PAINTING ASSET UNAVAILABLE: '+error.message);return null;
+  });
+  const fixtures=[dog,person,...(painting?[painting]:[])];
   browser=await chromium.launch({headless:true,args:['--no-sandbox']});
   const context=await browser.newContext({acceptDownloads:true,viewport:{width:1440,height:950},deviceScaleFactor:1});
   page=await context.newPage();
@@ -44,11 +50,11 @@ try {
     assert.match(await page.title(),/ALGO\/COLLAGE/);
   });
   await stage('Photographs upload and trigger subject analysis',async()=>{
-    await page.locator('#upload-input').setInputFiles([dog,person]);
-    await page.waitForFunction(()=>document.querySelectorAll('#pool .analysis-badge').length===2,null,{timeout:30000});
+    await page.locator('#upload-input').setInputFiles(fixtures);
+    await page.waitForFunction(count=>document.querySelectorAll('#pool .analysis-badge').length===count,fixtures.length,{timeout:30000});
     await page.waitForFunction(()=>{
       const badges=[...document.querySelectorAll('#pool .analysis-badge')].map(n=>n.textContent||'');
-      return badges.length===2 && badges.every(t=>/^\d+ subjects?$/.test(t)||/^Large fragments/.test(t));
+      return badges.length>=2 && badges.every(t=>/^\d+ subjects?$/.test(t)||/^(Large fragments|Bounded detail)/.test(t));
     },null,{timeout:300000});
     const badgeDetails=await page.locator('#pool .analysis-badge').evaluateAll(nodes=>nodes.map(node=>({text:node.textContent,title:node.title})));
     const badgeText=badgeDetails.map(item=>item.text);
@@ -56,14 +62,14 @@ try {
     const status=await page.locator('#cutting-status').innerText();
     record('Cutting status: '+status);
     assert.ok(badgeText.some(x=>/\d+ subjects?/i.test(x)),'No subject mask was extracted from real photographs: '+JSON.stringify(badgeDetails));
-    assert.doesNotMatch(status,/unavailable for [12]/i,'One or more recognition workers failed');
+    assert.doesNotMatch(status,/unavailable for [1-9]/i,'One or more recognition workers failed');
   });
   await stage('Original subject cuts and Cut map render',async()=>{
     await page.locator('#view-cuts').click();
     await page.locator('#canvas-info').waitFor();
     const text=await page.locator('#canvas-info').innerText();
     record('Cut map: '+text);
-    assert.match(text,/subject outlines|large fragments/i);
+    assert.match(text,/subject outlines|large fragments|bounded source details/i);
     await saveScreenshot('cut-map');
     await page.locator('#view-collage').click();
     const info=await page.locator('#canvas-info').innerText();
@@ -100,11 +106,19 @@ try {
     await projectDownload.saveAs(projectPath);
     const project=JSON.parse(await readFile(projectPath,'utf8'));
     assert.equal(project.version,2);
-    assert.equal(project.images.length,2);
+    assert.equal(project.images.length,fixtures.length);
     assert.ok(project.images.some(img=>img.analysis?.subjects?.length),'Portable project lost extracted subjects');
     record('Saved project with '+project.images.map(i=>i.analysis?.subjects?.length||0).join(', ')+' subject masks');
+    if(painting){
+      const painted=project.images.find(i=>i.title.toLowerCase().includes('mona-lisa'));
+      assert.ok(painted,'Uploaded Mona Lisa was not saved');
+      const subjects=painted.analysis?.subjects||[];
+      record('Mona Lisa extraction: '+JSON.stringify(subjects.map(s=>({label:s.label,bounds:s.bounds,manual:s.manual}))));
+      assert.ok(subjects.length>0,'Mona Lisa has no edge-selected detail or detected face');
+      assert.ok(subjects.every(s=>s.bounds.w*s.bounds.h<.4),'Mona Lisa still contains a near-full-frame silhouette');
+    }
     await page.locator('#project-input').setInputFiles({name:'project.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
-    await page.waitForFunction(()=>document.querySelectorAll('#pool .analysis-badge').length===2,{timeout:30000});
+    await page.waitForFunction(count=>document.querySelectorAll('#pool .analysis-badge').length===count,fixtures.length,{timeout:30000});
   });
   record('PASS all live Chrome photo/recognition/cut/export smoke checks');
   await saveScreenshot('final');
