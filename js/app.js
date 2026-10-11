@@ -2,7 +2,8 @@ import { sanitiseSettings, makeCuts, makeLayout, makeScene } from './composition
 import { searchImages, fetchImage, MAX_IMAGES, MAX_IMAGE_BYTES, MAX_PROJECT_BYTES, RASTER_TYPES, creditsText } from './sources.js';
 import { readWorkspace, writeWorkspace, readSettings, writeSettings, projectDocument, validateProject } from './storage.js';
 import { MAX_LOCKED_LAYERS, pickSpreadBaseline, captureLayer, combineLayers, guideForLayer, referencedLayerImages, validateLockedLayers } from './layer-stack.js';
-import { renderCollage, renderCutMap, renderLayoutMap } from './render.js';
+import { renderCollage, renderCutMap, renderLayoutMap, fragmentCanvas } from './render.js';
+import { MAX_CUTOUTS, cutoutFromMask, placeCutouts, validateCutouts } from './layer-workflow.js';
 import { pngWithCredits } from './png.js';
 import { SubjectAnalyser } from './analysis.js';
 import { guideRegions } from './image-cuts.js';
@@ -14,6 +15,7 @@ const A=window.AlgoArt;
 let settings=readSettings(), images=[], scene=null, view='collage';
 let cuts=null, layout=null, cutKey='', layoutKey='', fragmentCache=new Map();
 let currentScene=null,lockedLayers=[],previewLayerId='current';
+let activeCutouts=[],stagedCutouts=[],archivedCutLayer=null,legacyCutoutMigration=false;
 let searchController=null, searchSerial=0, searchState=null, searchResults=[], adding=new Set();
 let persistQueue=Promise.resolve(), frame=null, noticeTimer=null, hydrating=true;
 const analyser=new SubjectAnalyser(),analysisStates=new Map();
@@ -38,8 +40,8 @@ function rememberSettings() {
   try {writeSettings(settings);}catch {$('storage-status').textContent='Settings could not be saved in this browser. Save a project file to keep them.';}
 }
 function persist() {
-  const snapshot=images.slice(),layerSnapshot=lockedLayers.slice();
-  persistQueue=persistQueue.catch(()=>{}).then(()=>writeWorkspace(snapshot,layerSnapshot)).then(()=>{
+  const snapshot=images.slice(),layerSnapshot=lockedLayers.slice(),activeSnapshot=activeCutouts.slice();
+  persistQueue=persistQueue.catch(()=>{}).then(()=>writeWorkspace(snapshot,layerSnapshot,activeSnapshot)).then(()=>{
     $('storage-status').textContent='Pool saved in this browser. Save a project for a portable copy.';
     $('storage-status').classList.remove('error');
   }).catch(()=>{
@@ -72,7 +74,16 @@ function rebuild() {
       const nextLayoutKey=JSON.stringify([settings.layoutMode,settings.layoutSeed,settings.pieces,settings.orientation,settings.negativeSpace,settings.rotation]);
       if(nextCutKey!==cutKey) {cuts=makeCuts(A,settings);cutKey=nextCutKey;fragmentCache.clear();}
       if(nextLayoutKey!==layoutKey) {layout=makeLayout(A,settings);layoutKey=nextLayoutKey;}
-      currentScene=makeScene(A,settings,images,cuts,layout);
+      const rawScene=makeScene(A,settings,images,cuts,layout);
+      if(legacyCutoutMigration&&images.length) {
+        activeCutouts=rawScene.pieces.map((piece,index)=>({
+          ...cutoutFromMask(images.find(i=>i.id===piece.imageId),piece.mask,rawScene.cuts),
+          key:'legacy:'+index+':'+piece.imageId
+        }));
+        legacyCutoutMigration=false;
+        void persist();
+      }
+      currentScene=placeCutouts(rawScene,activeCutouts);
       scene=combineLayers(currentScene,lockedLayers);
       renderLayerList();draw();ensureAnalysis();
     } catch(error) {notice('The composition could not be created: '+error.message,true);}
@@ -82,8 +93,7 @@ function draw() {
   if(!scene)return;
   const canvas=$('artwork'), active=images.filter(i=>i.enabled!==false);
   const guide=guideForLayer(currentScene,lockedLayers,previewLayerId);
-  if(view==='cuts')renderCutMap(canvas,currentScene,images,{scale:0.7,imageId:previewImageId});
-  else if(view==='layout')renderLayoutMap(canvas,guide,{scale:0.7});
+  if(view==='layout')renderLayoutMap(canvas,guide,{scale:0.7});
   else renderCollage(canvas,scene,images,{scale:1,cache:fragmentCache});
   $('empty-canvas').hidden=scene.pieces.length>0 || view!=='collage';
   $('export').disabled=scene.pieces.length===0;
@@ -93,17 +103,17 @@ function draw() {
   $('layout-inspector').hidden=view!=='layout';
   $('layout-guide-name').textContent=selectedGuide?selectedGuide.name+' · locked':'Active layer · editable';
   $('layout-guide-meta').textContent=guide.layout.strategy+' · '+guide.layout.slots.length+' positions';
-  canvas.setAttribute('aria-label',view==='cuts' ? 'Cut map: '+(source?.masks.length||cuts.masks.length)+' '+(source?.kind||'geometric')+' cuts'+(inspected?' from '+inspected.title:'') :
-    view==='layout' ? 'Layout map for '+(selectedGuide?.name||'active layer')+': '+guide.layout.slots.length+' positions from '+guide.layout.strategy :
-    'Collage of '+scene.pieces.length+' fragments from '+active.length+' active images');
+  canvas.setAttribute('aria-label',view==='layout' ? 'Layout map for '+(selectedGuide?.name||'active layer')+': '+guide.layout.slots.length+' positions from '+guide.layout.strategy :
+    'Collage of '+scene.pieces.length+' fragments across '+(lockedLayers.length+1)+' layers');
   const subjectCount=scene.pieces.filter(p=>p.mask.kind==='subject').length;
-  $('canvas-info').textContent=view==='cuts' ? source ? `${source.masks.length} ${source.kind==='subjects'?'subject outlines':source.kind==='details'?'bounded source details':'large fragments'} · ${source.width} × ${source.height} source · guided by ${cuts.strategy}` : `${cuts.masks.length} geometric cut shapes · ${cuts.strategy}` :
-    view==='layout' ? `${selectedGuide?.name||'Active layer'} · ${guide.layout.slots.length} positions · ${guide.layout.strategy} · ${guide.layout.width} × ${guide.layout.height}` :
+  $('canvas-info').textContent=view==='layout' ? `${selectedGuide?.name||'Active layer'} · ${guide.layout.slots.length} positions · ${guide.layout.strategy} · ${guide.layout.width} × ${guide.layout.height}` :
     `${scene.pieces.length} pieces across ${lockedLayers.length+1} layer${lockedLayers.length?'s':''}${subjectCount?' · '+subjectCount+' subject cuts':''} · ${new Set(scene.pieces.map(p=>p.imageId)).size} images used · ${layout.width} × ${layout.height}`;
-  $('cut-inspector').hidden=view!=='cuts'||!images.length;
   $('pick-subject').disabled=settings.cutStyle!=='subjects'||!inspected||analysisStates.get(inspected)?.busy===true;
   $('lock-layer').disabled=!currentScene.pieces.length||lockedLayers.length>=MAX_LOCKED_LAYERS;
-  canvas.classList.toggle('picking',picking&&view==='cuts');
+  $('active-cut-count').textContent=activeCutouts.length
+    ? activeCutouts.length+' selected scrap'+(activeCutouts.length===1?'':'s')+' transferred to the assembly board.'
+    : 'No cutouts transferred. Open the Cutting Room to prepare this layer.';
+  if($('cut-room').open)renderCutRoom();
 }
 function poolChanged() {fragmentCache.clear();renderPool();renderResults();syncInspector();updateAnalysisStatus();rebuild();void persist();}
 function renderLayerList() {
