@@ -22,15 +22,23 @@ Recognition runs in a worker on your device using **MediaPipe Tasks Vision 1.1.0
 
 This remains an experimental cutter: painted faces, tiny objects, fine hair and overlapping subjects can defeat recognition, and Sobel contours are approximate rather than semantic segmentation. A broad person detection cannot by itself yield the whole portrait. Old oversized cached masks are invalidated and recalculated when reopening a pool or v2 project. Use **Pick a subject** for missed faces, or switch to Large image fragments for intentionally wide crops.
 
+## Random composition baselines and locked layers — 0.3
+
+**New baseline** replaces the assembly layout dropdown. Every click samples nine fresh, seeded guides across the three ALGO/ART families (orbital, constructed and recursive), scoring the spacing, overall canvas coverage and balance of their positions. It picks a widely distributed candidate; this is deliberately not a guarantee that objects will never overlap. The chosen family and reproducible seed remain visible.
+
+**Lock layer & add another** freezes the active layer's actual artwork: assigned image IDs, cut shapes and subject masks, placement geometry, visual settings and its own composition guide. A fresh independently seeded active layer appears above it. Locked pieces remain visible beneath subsequent layers in the main collage, and the layer stack provides **View guide** for each snapshot or the editable active layer. Remove a locked layer without changing the other snapshots.
+
+The full stack, source credits and each locked guide are preserved in the downloaded PNG and portable **v3** project, and the stack is also kept with the image pool in IndexedDB. Old v1 and v2 projects still open with no locked layers. A source image used by a locked layer cannot be deleted until that layer is removed; the canvas orientation is fixed while layers exist. Paper is a canvas-wide setting. There is a practical limit of 12 locked layers (plus the editable active one).
+
 ## Image pool and composition
 
 - Search **Wikimedia Commons** or **Openverse**, choose a topic, or upload raster images.
 - Keep up to **24 images** from multiple searches. Exclude images without removing them.
-- Choose **Constructed Forms**, **Recursive Divisions** or **Orbital Studies** independently for selection and assembly.
+- Choose **Constructed Forms**, **Recursive Divisions** or **Orbital Studies** for cutting regions. Generate fresh assembly baselines with **New baseline**; the studio automatically evaluates the three families for spacing.
 - **Re-cut** changes the selection regions and partial windows; whole subjects stay intact. **Recompose** changes the layout while retaining the selected fragments. **Shuffle images** changes source assignment.
 - Adjust maximum pieces, region detail, quiet space, piece scale, rotation, paper, shadows and monochrome.
 - Export a **2× PNG** with embedded UTF-8 source credits, or download readable credits separately.
-- Save/open a **portable JSON project** containing the pool, subject masks, seeds and settings. IndexedDB also keeps the pool in this browser.
+- Save/open a **portable JSON project** containing the pool, subject masks, seeds, settings and every locked layer's geometry and layout map. IndexedDB also keeps the pool and layers in this browser.
 
 Different layout families generate different numbers of positions; **Maximum pieces** caps that number. New sessions use fewer, larger pieces. Existing saved composition controls are retained.
 
@@ -63,7 +71,7 @@ API references: [MediaWiki search](https://www.mediawiki.org/wiki/API:Search), [
 
 ## Pipeline and checks
 
-`composition.js` runs the unchanged ALGO/ART V7 engine. `image-cuts.js` maps its regions to each full source image, ranks subjects and defines large or partial windows. `subject-worker.js` performs local detection and bounded segmentation; `edge-trace.js` supplies Sobel-guided contours and painterly saliency details; `subject-data.js` validates and compresses the masks. `render.js` applies silhouettes and assembles the fragments. `storage.js` persists the pool and validates projects before replacing work; `png.js` embeds source credits.
+`composition.js` runs the unchanged ALGO/ART V7 engine. `layer-stack.js` scores new baseline candidates and freezes independent composition layers. `image-cuts.js` maps its regions to each full source image, ranks subjects and defines large or partial windows. `subject-worker.js` performs local detection and bounded segmentation; `edge-trace.js` supplies Sobel-guided contours and painterly saliency details; `subject-data.js` validates and compresses the masks. `render.js` applies silhouettes and assembles the fragments. `storage.js` persists the pool and validates projects before replacing work; `png.js` embeds source credits.
 
 The five engine files in `vendor/algoart/` are **unchanged**, pinned to renderer **V7**, commit [`d231259`](https://github.com/southernadd-cmyk/algoart/commit/d231259ad08a690c1109a6af7f624c769c50eadc). `upstream.json` records their blob hashes. The marker font comes from the same author's project.
 
