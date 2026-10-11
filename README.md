@@ -6,7 +6,17 @@ A browser collage studio built on [ALGO/ART](https://github.com/southernadd-cmyk
 
 **[Open the live studio →](https://southernadd-cmyk.github.io/algoCollage/)**
 
-![Algo Collage studio](docs/studio.jpg)
+![Algo Collage studio before the cut-paper redesign](docs/studio.jpg)
+
+*The original launch screenshot predates the redesigned physical collage workbench.*
+
+## A cut-and-paste workbench — 0.4
+
+The interface is designed to feel like a **collage in progress**, rather than a conventional image-processing dashboard. A dark cutting desk frames a taped paper canvas. Material search lives on a torn notebook leaf; downloaded and uploaded images look like annotated scraps in a drawer. New baseline, locking, shuffling, map views and PNG export are directly beside the composition, with the independent layer pile at the right.
+
+The art direction deliberately combines newsprint and photocopy grain, untrimmed paper edges, small offset print/shadows, masking tape, typewritten specimen labels, the existing ALGO/ART marker typeface and restrained colour from faded inks. Interactive controls retain strong contrast, clearly labelled states, keyboard focus, and 390px mobile layouts. A jump-to-workbench link avoids lengthy scrolling past source controls on phones.
+
+The visuals use local CSS and an extremely small SVG noise tile; there are **no new third-party web assets, font services or image dependencies**. The unchanged collage and export engines still supply the actual artwork; paper effects are UI only and do not alter downloaded PNGs.
 
 ## Subject-aware cutting — 0.3
 
