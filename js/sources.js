@@ -88,6 +88,11 @@ export function creditsText(scene, images) {
     'Cut seed: '+scene.settings.cutSeed, 'Layout seed: '+scene.settings.layoutSeed, 'Image seed: '+scene.settings.imageSeed,
     '', 'Source licences describe the original images. Retain these credits when sharing.',
     'CC BY-SA sources may impose ShareAlike terms on adaptations; follow each linked source licence.', ''];
+  if(scene.lockedGuideHistory?.length) {
+    lines.push('Locked layer composition guides:');
+    scene.lockedGuideHistory.forEach((guide,i)=>lines.push((i+1)+'. '+guide.name+' · '+guide.strategy+' ('+guide.mode+') · '+guide.seed));
+    lines.push('Active layer: '+scene.settings.layoutMode+' · '+scene.settings.layoutSeed,'');
+  }
   for (const image of images.filter(i => used.has(i.id))) {
     lines.push(image.title, 'Creator: '+(image.creator || 'Not supplied; see source'), 'Licence: '+image.license);
     if (image.sourceUrl) lines.push('Source: '+image.sourceUrl);
