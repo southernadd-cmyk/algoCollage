@@ -256,7 +256,7 @@ h1,h2,h3,p{margin-top:0}
 .paper-wrap::after{right:7%;transform:rotate(16deg)}
 .paper-wrap canvas{
   display:block;width:auto;max-width:100%;height:auto;max-height:min(64vh,760px);
-  border:9px solid #f4eedf;box-shadow:inset 0 0 0 1px #b6ab95,0 0 0 1px #afa188,6px 7px 1px #39332730;
+  outline:9px solid #f4eedf;box-shadow:inset 0 0 0 1px #b6ab95,0 0 0 1px #afa188,6px 7px 1px #39332730;
   background:#f7f0e5;
 }
 .empty-canvas{
@@ -454,7 +454,7 @@ dialog p,.credit-item p{font-size:12px}
   .export-button{width:100%;font-size:10px;padding:9px}
   .canvas-panel{padding:27px 15px;min-height:345px}
   .canvas-panel::before{inset:7px}
-  .paper-wrap canvas{max-height:530px;border-width:6px}
+  .paper-wrap canvas{max-height:530px;outline-width:6px}
   .paper-wrap::before,.paper-wrap::after{width:50px;height:19px;top:-7px}
   .canvas-caption{flex-wrap:wrap;gap:4px;padding:10px}
   .canvas-caption p{flex-basis:60%;font-size:9px}
