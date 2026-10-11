@@ -33,7 +33,7 @@ test('locking freezes source images, cut shapes and guide independently of the a
   const later=makeScene(A,{...DEFAULTS,layoutMode:'rects',layoutSeed:'NEXT-BASE',cutSeed:'NEW-CUT',scale:120},pool);
   const combined=combineLayers(later,[locked]);
   assert.equal(combined.pieces.length,start.pieces.length+later.pieces.length);
-  assert.deepEqual(combined.pieces.slice(0,locked.pieces.length),locked.pieces);
+  assert.equal(JSON.stringify(combined.pieces.slice(0,locked.pieces.length)),JSON.stringify(locked.pieces));
   assert.equal(JSON.stringify(locked),saved);
   assert.deepEqual(guideForLayer(later,[locked],'first').layout,locked.layout);
   assert.deepEqual(guideForLayer(later,[locked],'current').layout,later.layout);
@@ -48,8 +48,8 @@ test('layers retain independently selected guides across multiple locks and laye
   const c=makeScene(A,{...DEFAULTS,layoutSeed:'THIRD',layoutMode:'rects'},pool);
   const layer1=captureLayer(a,'one','Layer 1'),layer2=captureLayer(b,'two','Layer 2');
   const all=combineLayers(c,[layer1,layer2]);
-  assert.deepEqual(all.pieces.slice(0,layer1.pieces.length),layer1.pieces);
-  assert.deepEqual(all.pieces.slice(layer1.pieces.length,layer1.pieces.length+layer2.pieces.length),layer2.pieces);
+  assert.equal(JSON.stringify(all.pieces.slice(0,layer1.pieces.length)),JSON.stringify(layer1.pieces));
+  assert.equal(JSON.stringify(all.pieces.slice(layer1.pieces.length,layer1.pieces.length+layer2.pieces.length)),JSON.stringify(layer2.pieces));
   assert.equal(combineLayers(c,[layer2]).pieces.length,layer2.pieces.length+c.pieces.length);
   assert.deepEqual(guideForLayer(c,[layer1,layer2],'two').layout,layer2.layout);
 });
