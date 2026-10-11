@@ -4,6 +4,10 @@
 
 A browser collage studio built on [ALGO/ART](https://github.com/southernadd-cmyk/algoart). Build an image pool from free image searches or your own uploads. One seeded ALGO/ART output defines the cut shapes; a second output places the fragments into a new composition.
 
+**[Open the live studio →](https://southernadd-cmyk.github.io/algoCollage/)**
+
+![The live Algo Collage studio with botanical and nebula images in its pool](docs/studio.jpg)
+
 *How far can the golden ratio govern a collage while its fragments remain unexpected?*
 
 ## First prototype
@@ -38,7 +42,7 @@ For GitHub Pages, select **Settings → Pages → Source → GitHub Actions**. T
 
 The default filter keeps sources identified as **public domain or CC0**. An optional filter also accepts **CC BY / CC BY-SA**, retains source and licence links, and includes them in the credits. Unknown, noncommercial and no-derivatives licence labels are excluded. These are metadata filters, not independent verification of the original rights.
 
-The APIs are separate from the image hosts. A search result can appear even when its host blocks browser downloads. Only images fetched successfully as raster blobs enter the pool, keeping PNG export safe from cross-origin canvas restrictions. Failed hosts can be bypassed by choosing another result or uploading a saved image. API rate limits and downtime are handled without losing the pool.
+The APIs are separate from the image hosts. A search result can appear even when its host blocks browser downloads. Only images fetched successfully as raster blobs enter the pool, keeping PNG export safe from cross-origin canvas restrictions. Failed hosts can be bypassed by choosing another result or uploading a saved image. API rate limits and downtime are handled without losing the pool. Commons search and downloads were verified on the live site; Openverse could not be reached from the validation browser, so its live integration remains unverified.
 
 Images are reduced to at most **1600 px** on their longest side before storage; individual inputs are limited to **16 MB**, and portable projects to **64 MB**. Export dimensions are 2000 × 2800 portrait, 2800 × 2000 landscape or 2400 × 2400 square. A larger export does not recover image detail lost through source resizing. Save a project before clearing browser data.
 

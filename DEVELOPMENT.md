@@ -1,4 +1,4 @@
-# Prototype validation
+# Launch validation
 
 The prototype reuses the author's current ALGO/ART V7 engine without changing its source. Both geometry stages come from that engine; the collage renderer is a separate adapter.
 
@@ -10,14 +10,24 @@ Additional local validation used a real Canvas 2D raster implementation and thre
 
 The HTML has unique IDs and valid label targets, all linked assets exist, and the HTTP entry point, application module, vendored engine and marker font served successfully.
 
-## Browser checks
+## Public deployment
 
-All seven Node.js test groups and all JavaScript syntax checks pass. The geometry tests exercise the actual pinned engine in a recording context, not a substitute layout implementation.
+The application is live at **https://southernadd-cmyk.github.io/algoCollage/**. GitHub Pages uses the GitHub Actions publishing source. The workflow runs the engine tests and JavaScript syntax checks before uploading only the application's static assets and deploying them. The initial deployment [completed successfully](https://github.com/southernadd-cmyk/algoCollage/actions/runs/38096799830).
 
-Full browser validation is **not yet completed**: the local runtime has Playwright but no installed browser binary, and the available remote Chrome cannot reach the local preview server (`ERR_CONNECTION_REFUSED`). UI interactions, file-picker behaviour and IndexedDB persistence remain to be verified in a real browser. No screenshot or live deployment is claimed as proof of those behaviours.
+## Live browser checks
 
-## Live API limitation
+The deployed application was exercised in Chrome. Commons topic searches returned 9 botanical results and 15 space results with the default public-domain/CC0 filter. Five real images from these two searches were downloaded into the same pool and rendered together. A PNG upload also entered the pool successfully and was removed after checking it.
 
-The development environment blocks network access to `commons.wikimedia.org` and `api.openverse.org` (HTTP 403). Provider interfaces are based on their official documentation. Controlled API responses can validate search, pool addition, download failure handling and export, but do not establish that the live providers or individual image hosts work from the deployed site.
+- Recompose changes only the layout seed; Re-cut changes only the cut seed.
+- Unchecking a source reduced the active image count while retaining the image in the pool; Use all restored it.
+- Cut map and layout map rendered, including keyboard navigation between view tabs.
+- The portrait collage rendered with 18 fragments; switching cut family, assembly family and square format produced a 1200 × 1200 collage with 14 fragments.
+- Reloading the page retained the ordered image pool and changed seed settings.
+- A saved JSON project contained the three original images, then reopened through the file chooser and restored its exact cut and layout seeds.
+- The browser's exported PNG was downloaded and inspected: **2000 × 2800**, valid PNG chunk CRCs, and an embedded UTF-8 source-credit chunk containing the source titles and links.
 
-Before treating live image search as verified, check from a normal browser: search each provider, add a result, export a PNG and reopen the saved project. Uploads provide an independent way to exercise the whole image-cutting pipeline.
+The [launch screenshot](docs/studio.jpg) shows the live square composition and its five-image pool. Source pictures shown there are the public-domain/CC0 Commons results described above. Desktop Chrome was checked; separate mobile and other-browser validation remains outstanding.
+
+## Provider limitation
+
+Live Commons search, raster downloads, rendering and export work from the deployed site. **Openverse could not be reached** from the validation browser; the application displayed its source-unavailable message without losing the pool. Its endpoint and parsing are covered against controlled responses and official API documentation, but its live search and image downloads remain unverified. Commons is the default provider, and uploads offer another working source of material.
