@@ -19,7 +19,7 @@ let activeCutouts=[],stagedCutouts=[],archivedCutLayer=null,legacyCutoutMigratio
 let searchController=null, searchSerial=0, searchState=null, searchResults=[], adding=new Set();
 let persistQueue=Promise.resolve(), frame=null, noticeTimer=null, hydrating=true;
 const analyser=new SubjectAnalyser(),analysisStates=new Map();
-let previewImageId=null,picking=false;
+let previewImageId=null,picking=false,pendingCutReconcile=false,cutNotice='';
 
 function notice(text,error=false) {
   clearTimeout(noticeTimer);const node=$('notice');node.textContent=text;node.classList.toggle('error',error);node.hidden=false;
@@ -60,7 +60,7 @@ function syncControls() {
     const output=$(key+'-value');if(output)output.value=String(settings[key]);
   }
   $('whole-subjects').disabled=settings.cutStyle!=='subjects';
-  $('cut-size').disabled=settings.cutStyle==='geometric';
+  $('cut-size').disabled=settings.cutStyle==='geometric'||(settings.cutStyle==='subjects'&&settings.wholeSubjects);
   $('orientation').disabled=lockedLayers.length>0;
   $('baseline-kind').textContent={field:'Orbital studies',geometric:'Constructed forms',rects:'Recursive divisions'}[settings.layoutMode]||'ALGO/ART';
   updateAnalysisStatus();
@@ -84,6 +84,17 @@ function rebuild() {
         void persist();
       }
       currentScene=placeCutouts(rawScene,activeCutouts);
+      if(pendingCutReconcile){
+        const valid=new Set(images.flatMap(image=>(rawScene.imageCuts[image.id]?.masks||cuts.masks)
+          .map(mask=>JSON.stringify([image.id,String(mask.id??mask.index)]))));
+        const before=stagedCutouts.length;
+        stagedCutouts=stagedCutouts.filter(cutout=>valid.has(cutout.key));
+        const dropped=before-stagedCutouts.length;
+        cutNotice=dropped?dropped+' old cutout'+(dropped===1?'':'s')+
+          ' removed from the selection tray because the cutting method changed. The board has not changed.':
+          'New cutting candidates are ready. Nothing on the board has changed.';
+        pendingCutReconcile=false;
+      }
       scene=combineLayers(currentScene,lockedLayers);
       renderLayerList();draw();ensureAnalysis();
     } catch(error) {notice('The composition could not be created: '+error.message,true);}
@@ -110,9 +121,6 @@ function draw() {
     `${scene.pieces.length} pieces across ${lockedLayers.length+1} layer${lockedLayers.length?'s':''}${subjectCount?' · '+subjectCount+' subject cuts':''} · ${new Set(scene.pieces.map(p=>p.imageId)).size} images used · ${layout.width} × ${layout.height}`;
   $('pick-subject').disabled=settings.cutStyle!=='subjects'||!inspected||analysisStates.get(inspected)?.busy===true;
   $('lock-layer').disabled=!currentScene.pieces.length||lockedLayers.length>=MAX_LOCKED_LAYERS;
-  $('active-cut-count').textContent=activeCutouts.length
-    ? activeCutouts.length+' selected scrap'+(activeCutouts.length===1?'':'s')+' transferred to the assembly board.'
-    : 'No cutouts transferred. Open the Cutting Room to prepare this layer.';
   if($('cut-room').open)renderCutRoom();
 }
 function poolChanged() {fragmentCache.clear();renderPool();renderResults();syncInspector();updateAnalysisStatus();rebuild();void persist();}
@@ -153,6 +161,27 @@ function renderCutRoom() {
     ?images.filter(image=>archive.pieces.some(p=>p.imageId===image.id))
     :images;
   $('cut-room').classList.toggle('archive',!!archive);
+  const selectedForUI=available.find(i=>i.id===previewImageId);
+  const recognised=settings.cutStyle==='subjects'&&settings.wholeSubjects&&!!selectedForUI?.analysis?.subjects?.length;
+  const geometric=settings.cutStyle==='geometric';
+  $('cut-mode').disabled=!!archive||recognised;
+  $('recut').disabled=!!archive||recognised;
+  $('cut-seed').disabled=!!archive||recognised;
+  $('detail').disabled=!!archive||recognised;
+  $('cut-size').disabled=!!archive||geometric||(settings.cutStyle==='subjects'&&settings.wholeSubjects);
+  $('whole-subjects').disabled=!!archive||settings.cutStyle!=='subjects';
+  $('cut-style').disabled=!!archive;
+  $('cut-geometry-options').classList.toggle('inactive-method',recognised);
+  const explanation=settings.cutStyle==='subjects'
+    ?settings.wholeSubjects
+      ?'RECOGNISED SILHOUETTE — the complete detected face or object is cut out. It keeps its real outline, so ALGO/ART region changes do not reshape it. Untick Keep whole subjects for three distinct detail cuts, or choose another method.'
+      :'OBJECT DETAILS — three different sections of each recognised face or object. ALGO/ART cutting regions affect where the details come from. The face is not reused as one identical piece.'
+    :settings.cutStyle==='regions'
+      ?'PHOTO FRAGMENTS — several separate photographic sections selected around ALGO/ART territories, with no face detection or face mask. Source coverage changes their size.'
+      :'GEOMETRIC SHAPES — the actual closed ALGO/ART polygons and divisions cut the photograph directly. No face recognition or subject mask is involved.';
+  $('cut-method-explanation').textContent=explanation+(cutNotice?' '+cutNotice:'');
+  $('cut-preview-explanation').textContent=explanation;
+  $('reset-cut-tray').disabled=!!archive||!stagedCutouts.length;
   $('cut-room-title').innerHTML=archive?'Archived <em>cuts.</em>':'Cut first. <em>Place later.</em>';
   $('cut-room-subtitle').textContent=archive?archive.name+' · frozen cutouts, inspect only.':
     'Layer '+(lockedLayers.length+1)+' · select the scraps to transfer to the assembly board.';
@@ -181,7 +210,7 @@ function renderCutRoom() {
     imageId:piece.imageId,key:'archived:'+index,mask:piece.mask,
     cutWidth:piece.layerCuts.width,cutHeight:piece.layerCuts.height
   })):stagedCutouts;
-  $('candidate-count').textContent=masks.length+' available';
+  $('candidate-count').textContent=masks.length+' '+(settings.cutStyle==='subjects'?'recognised/detail':settings.cutStyle==='regions'?'photographic':'geometric')+' cutouts';
   if(!selected)candidates.append(element('p','small-note','Add images, then choose a source.'));
   for(const mask of masks) {
     const cutout=archive?null:cutoutFromMask(selected,mask,cuts),isChosen=cutout&&saved.some(c=>c.key===cutout.key);
@@ -222,6 +251,7 @@ function renderCutRoom() {
     saved.length>capacity?'The current layout has '+capacity+' positions. Transfer will find a more spacious ALGO/ART baseline.':
     'Ready to transfer: all '+saved.length+' cutouts will be placed once, not duplicated.';
   $('transfer-cutouts').disabled=!valid;
+  $('reset-cut-tray').disabled=!!archive||!stagedCutouts.length;
 }
 function transferCutouts() {
   if(archivedCutLayer||!stagedCutouts.length)return;
@@ -501,11 +531,15 @@ for(const [key,id] of Object.entries(controlMap)) {
     if(key==='pieces'&&value<activeCutouts.length){
       syncControls();notice('The current layer has '+activeCutouts.length+' transferred scraps. Remove some in the Cutting Room before lowering the piece limit.',true);return;
     }
+    if(['cutMode','cutSeed','detail','cutStyle','cutSize','wholeSubjects'].includes(key)){
+      pendingCutReconcile=true;
+      if(key==='cutStyle')picking=false;
+    }
     settings=sanitiseSettings({...settings,[key]:value});fragmentCache.clear();syncControls();rememberSettings();rebuild();
   });
 }
 const regenerate=(key,prefix)=>{settings={...settings,[key]:newSeed(prefix)};syncControls();rememberSettings();rebuild();};
-$('recut').addEventListener('click',()=>regenerate('cutSeed','CUT'));
+$('recut').addEventListener('click',()=>{pendingCutReconcile=true;regenerate('cutSeed','CUT');});
 function nextBaseline(minPieces=activeCutouts.length) {
   const modes=['field','geometric','rects'];
   const candidates=Array.from({length:minPieces>9?30:18},(_,i)=>({mode:modes[i%3],seed:newSeed('LAYOUT')}));
@@ -553,13 +587,17 @@ $('upload-input').addEventListener('change',()=>void addUploads($('upload-input'
 $('cut-upload').addEventListener('click',()=>$('cut-upload-input').click());
 $('cut-upload-input').addEventListener('change',()=>{void addUploads($('cut-upload-input').files);$('cut-upload-input').value='';});
 $('cut-find-more').addEventListener('click',()=>{closeCutRoom();document.querySelector('.source-section').scrollIntoView({behavior:'smooth'});});
-for(const id of ['open-cut-room','go-to-cutting','view-cuts','empty-cut-room'])
+for(const id of ['open-cut-room','go-to-cutting','empty-cut-room'])
   $(id).addEventListener('click',()=>openCutRoom());
 $('close-cut-room').addEventListener('click',closeCutRoom);
 $('cut-room').addEventListener('close',()=>{
   picking=false;archivedCutLayer=null;$('pick-subject').setAttribute('aria-pressed','false');
 });
 $('transfer-cutouts').addEventListener('click',transferCutouts);
+$('reset-cut-tray').addEventListener('click',()=>{
+  stagedCutouts=[];cutNotice='The selection tray is empty; transferred pieces on the board are unchanged.';
+  renderCutRoom();
+});
 $('save-project').addEventListener('click',()=>void saveProject());$('open-project').addEventListener('click',()=>$('project-input').click());
 $('project-input').addEventListener('change',()=>void openProject($('project-input').files[0]));
 $('export').addEventListener('click',()=>void exportPNG());$('credits-button').addEventListener('click',showCredits);
