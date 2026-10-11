@@ -21,6 +21,19 @@ function foregroundGrid(subject) {
   foregroundCache.set(mask,result);
   return result;
 }
+// The actual ALGO/ART territory, not its rectangular envelope, decides
+// which segmented pixels count towards a subject's selection score.
+function insidePolygon(x,y,points) {
+  let inside=false;
+  for(let i=0,j=points.length-1;i<points.length;j=i++) {
+    const a=points[i],b=points[j];
+    if((a.y>y)!==(b.y>y)) {
+      const crossing=(b.x-a.x)*(y-a.y)/(b.y-a.y)+a.x;
+      if(x<crossing)inside=!inside;
+    }
+  }
+  return inside;
+}
 function foregroundInside(grid,region) {
   const x0=Math.max(0,Math.floor(region.x*GRID));
   const y0=Math.max(0,Math.floor(region.y*GRID));
@@ -29,7 +42,9 @@ function foregroundInside(grid,region) {
   let count=0,sumX=0,sumY=0;
   for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
     const n=grid.cells[y*GRID+x];if(!n)continue;
-    count+=n;sumX+=(x+.5)/GRID*n;sumY+=(y+.5)/GRID*n;
+    const fx=(x+.5)/GRID,fy=(y+.5)/GRID;
+    if(region.points?.length>=3&&!insidePolygon(fx,fy,region.points))continue;
+    count+=n;sumX+=fx*n;sumY+=fy*n;
   }
   return {count,point:count?{x:sumX/count,y:sumY/count}:null};
 }
@@ -54,7 +69,8 @@ function foregroundPoint(subject,region) {
 const rectangle=b=>[{x:b.x,y:b.y},{x:b.x+b.w,y:b.y},{x:b.x+b.w,y:b.y+b.h},{x:b.x,y:b.y+b.h}];
 export function guideRegions(cuts) {
   return cuts.masks.map(mask=>({index:mask.index,x:mask.bounds.x/cuts.width,y:mask.bounds.y/cuts.height,
-    w:mask.bounds.w/cuts.width,h:mask.bounds.h/cuts.height}));
+    w:mask.bounds.w/cuts.width,h:mask.bounds.h/cuts.height,
+    points:mask.points?.map(point=>({x:point.x/cuts.width,y:point.y/cuts.height}))}));
 }
 export function rankedSubjects(subjects,regions) {
   const remaining=subjects.slice(),ranked=[];
