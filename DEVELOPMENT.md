@@ -41,3 +41,12 @@ The 13 automated checks pass, including mask corruption rejection, connected for
 The subject-geometry follow-up compares the actual ALGO/ART territory polygons with a cached 64 × 64 occupancy map of each segmented mask. In partial mode, regions that fall in a silhouette hole instead target the nearest visible foreground. This improves source selection without editing the upstream ALGO/ART generator. Unit tests cover misleading bounding boxes and a concave L-shaped silhouette.
 
 The automated suite does not prove that MediaPipe inference finishes in a real desktop or mobile browser. A post-deployment browser check with actual source photographs, manual picking, persistence, recomposition and PNG export is still required; no end-to-end subject-recognition claim is made here.
+
+
+## Conservative face and edge cutter — 0.3
+
+The 0.2 subject pass exposed two regressions with paintings: a broad person detection could suppress the face candidate, and a failed extraction silently fell back to a crop covering most of the source. As a result, a Mona Lisa input could yield nearly the whole painting instead of a head.
+
+The new path uses face-first proposals, small Sobel edge-guided head contours, detector-bounded MagicTouch segmentation for other objects, a stringent maximum-area gate on stored masks and compact saliency-selected details when recognition fails. The separate broad-region setting remains unchanged. The default Objects & faces fallback now uses roughly 21% of the source area, not roughly 72%. Legacy analysis results are invalidated for recomputation but existing v2 project files are still importable. MagicTouch is lazily initialised to avoid its memory cost for face-only images.
+
+Synthetic Node tests verify that broad person detections cannot suppress small faces, full-painting confidence masks are rejected, contour masks remain local, painterly edges produce bounded details and legacy mask caches refresh. The live smoke script additionally attempts a public-domain Mona Lisa fixture and logs candidate bounds. A passing test of area limits **does not prove** that the selected contour follows painted facial features correctly; a human visual check of the live Cut map is still necessary. If Mona Lisa image retrieval is blocked by Wikimedia, the smoke report explicitly records the omission rather than claiming a portrait test passed.
