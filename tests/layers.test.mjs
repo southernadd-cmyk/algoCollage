@@ -57,11 +57,12 @@ test('layers retain independently selected guides across multiple locks and laye
 test('v3 projects restore exact locked snapshots; older projects remain compatible',async()=>{
   const scene=makeScene(A,DEFAULTS,pool),locked=captureLayer(scene,'base','Layer 1');
   const data='data:image/png;base64,aGVsbG8=';
-  const doc={app:'ALGO/COLLAGE',version:3,engineCommit:ENGINE_COMMIT,settings:DEFAULTS,
-    images:pool.map(p=>({...p,data,license:'Public domain'})),layers:[locked]};
+  const doc={app:'ALGO/COLLAGE',version:4,engineCommit:ENGINE_COMMIT,settings:DEFAULTS,
+    images:pool.map(p=>({...p,data,license:'Public domain'})),layers:[locked],cutouts:[]};
   const loaded=validateProject(doc);
   assert.deepEqual(loaded.layers[0].layout,locked.layout);
   assert.deepEqual(loaded.layers[0].pieces.map(p=>p.mask),locked.pieces.map(p=>p.mask));
+  assert.equal(validateProject({...doc,version:3}).layers.length,1);
   assert.equal(validateProject({...doc,version:2}).layers.length,0);
   assert.equal(validateProject({...doc,version:1}).settings.cutStyle,'geometric');
   assert.throws(()=>validateProject({...doc,layers:[{...locked,pieces:[{...locked.pieces[0],imageId:'deleted'}]}]}),/missing image/);
@@ -72,7 +73,7 @@ test('v3 projects restore exact locked snapshots; older projects remain compatib
   globalThis.FileReader=class{readAsDataURL(){this.result=data;this.onload();}};
   try{
     const exported=await projectDocument(DEFAULTS,pool.map(p=>({...p,blob:new Blob(['hello']),element:{},objectURL:'blob:mock'})),[locked]);
-    assert.equal(exported.version,3);
+    assert.equal(exported.version,4);
     assert.equal(validateProject(exported).layers.length,1);
   }finally{globalThis.FileReader=original;}
 });
