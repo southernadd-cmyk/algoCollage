@@ -1,4 +1,5 @@
 import {clamp,overlap,decodeMask} from './subject-data.js';
+import {handMasksForImage} from './hand-cuts.js';
 
 // A compact, source-space occupancy map preserves the *actual* silhouette
 // when comparing ALGO/ART selection territories. Bounding boxes alone can
@@ -144,6 +145,7 @@ function subjectDetails(subject,regions,settings,width,height,key) {
 }
 
 export function makeImageCuts(cuts,settings,image) {
+  if(settings.cutStyle==='manual')return handMasksForImage(image);
   const width=image.element?.naturalWidth||image.width||cuts.width;
   const height=image.element?.naturalHeight||image.height||cuts.height;
   const regions=guideRegions(cuts);
