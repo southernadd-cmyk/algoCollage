@@ -54,7 +54,7 @@ async function analyse(job) {
     segmenter.setImage(canvas);
     const subjects=[];
     for(const candidate of candidates) {
-      const mask=segmenter.segment([{brushMode:Vision.BrushMode.POSITIVE,point:[candidate.point],isCompleted:true}]);
+      const mask=segmenter.segment([{brushMode:1 /* MediaPipe BrushMode.POSITIVE: numeric wire value (not UMD-exported) */,point:[candidate.point],isCompleted:true}]);
       try {
         const subject=helpers.subjectFromConfidence(mask.getAsFloat32Array(),mask.width,mask.height,candidate.point,candidate);
         if(subject&&!subjects.some(s=>helpers.duplicateSubject(s,subject)))subjects.push(subject);
