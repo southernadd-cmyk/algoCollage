@@ -50,11 +50,12 @@ try {
       const badges=[...document.querySelectorAll('#pool .analysis-badge')].map(n=>n.textContent||'');
       return badges.length===2 && badges.every(t=>/^\d+ subjects?$/.test(t)||/^Large fragments/.test(t));
     },null,{timeout:300000});
-    const badgeText=await page.locator('#pool .analysis-badge').allTextContents();
-    record('Per-photo analysis results: '+JSON.stringify(badgeText));
-    assert.ok(badgeText.some(x=>/\d+ subjects?/i.test(x)),'No subject mask was extracted from real photographs: '+badgeText.join(' | '));
+    const badgeDetails=await page.locator('#pool .analysis-badge').evaluateAll(nodes=>nodes.map(node=>({text:node.textContent,title:node.title})));
+    const badgeText=badgeDetails.map(item=>item.text);
+    record('Per-photo analysis results: '+JSON.stringify(badgeDetails));
     const status=await page.locator('#cutting-status').innerText();
     record('Cutting status: '+status);
+    assert.ok(badgeText.some(x=>/\d+ subjects?/i.test(x)),'No subject mask was extracted from real photographs: '+JSON.stringify(badgeDetails));
     assert.doesNotMatch(status,/unavailable for [12]/i,'One or more recognition workers failed');
   });
   await stage('Original subject cuts and Cut map render',async()=>{
