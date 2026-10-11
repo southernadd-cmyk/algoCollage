@@ -86,7 +86,7 @@ function draw() {
     view==='layout' ? 'Layout map: '+layout.slots.length+' positions from '+layout.strategy :
     'Collage of '+scene.pieces.length+' fragments from '+active.length+' active images');
   const subjectCount=scene.pieces.filter(p=>p.mask.kind==='subject').length;
-  $('canvas-info').textContent=view==='cuts' ? source ? `${source.masks.length} ${source.kind==='subjects'?'subject outlines':'large fragments'} · ${source.width} × ${source.height} source · guided by ${cuts.strategy}` : `${cuts.masks.length} geometric cut shapes · ${cuts.strategy}` :
+  $('canvas-info').textContent=view==='cuts' ? source ? `${source.masks.length} ${source.kind==='subjects'?'subject outlines':source.kind==='details'?'bounded source details':'large fragments'} · ${source.width} × ${source.height} source · guided by ${cuts.strategy}` : `${cuts.masks.length} geometric cut shapes · ${cuts.strategy}` :
     view==='layout' ? `${layout.slots.length} positions · ${layout.strategy} · ${layout.width} × ${layout.height}` :
     `${scene.pieces.length} pieces${subjectCount?' · '+subjectCount+' subject cuts':''} · ${new Set(scene.pieces.map(p=>p.imageId)).size} images used · ${layout.width} × ${layout.height}`;
   $('cut-inspector').hidden=view!=='cuts'||!images.length;
@@ -110,8 +110,8 @@ function updateAnalysisStatus() {
   status.textContent=settings.cutStyle==='geometric'?'Original geometric masks cut each image to the canvas proportions.':
     settings.cutStyle==='regions'?'Large fragments keep more of each source image.':
     busy.length?`${busy.length} image${busy.length===1?'':'s'} waiting for subject outlines. ${current?analysisStates.get(current).message:''}`:
-    !active.length?'Add images to find their subjects. Large fragments appear first.':
-    `${found.length} of ${active.length} images have subject outlines.${missed.length?' '+missed.length+' use large fragments; select a subject in the Cut map.':''}${failed.length?' Subject tools unavailable for '+failed.length+'; large fragments retained. '+String(analysisStates.get(failed[0])?.error||'').slice(0,180):''}`;
+    !active.length?'Add images to find their subjects. Smaller edge-guided details appear until recognition finishes.':
+    `${found.length} of ${active.length} images have subject outlines.${missed.length?' '+missed.length+' use bounded source details; select a subject in the Cut map.':''}${failed.length?' Subject tools unavailable for '+failed.length+'; bounded source details retained. '+String(analysisStates.get(failed[0])?.error||'').slice(0,180):''}`;
 }
 function ensureAnalysis() {
   if(hydrating||settings.cutStyle!=='subjects')return;
@@ -162,7 +162,7 @@ function renderPool() {
     const title=element('p',null,image.title);title.title=image.title;
     const inspect=element('button','inspect-image','Cut map ↗');inspect.setAttribute('aria-label','Inspect cuts for '+image.title);
     inspect.addEventListener('click',()=>{previewImageId=image.id;syncInspector();chooseView($('view-cuts'));$('canvas-panel').scrollIntoView({block:'center',behavior:'smooth'});});
-    const state=analysisStates.get(image),summary=state?.busy?state.message:state?.error?'Large fragments · retry available':image.analysis?.subjects.length?image.analysis.subjects.length+' subject'+(image.analysis.subjects.length===1?'':'s'):'Large fragments';
+    const state=analysisStates.get(image),summary=state?.busy?state.message:state?.error?(settings.cutStyle==='subjects'?'Bounded detail · retry available':'Large fragments · retry available'):image.analysis?.subjects.length?image.analysis.subjects.length+' subject'+(image.analysis.subjects.length===1?'':'s'):settings.cutStyle==='subjects'?'Bounded detail':'Large fragments';
     const badge=element('span','analysis-badge',summary);badge.title=state?.error?'Subject recognition failed: '+state.error:summary;
     const use=element('label');const checkbox=element('input');checkbox.type='checkbox';checkbox.checked=image.enabled!==false;checkbox.setAttribute('aria-label','Use '+image.title+' in collage');
     checkbox.addEventListener('change',()=>{image.enabled=checkbox.checked;poolChanged();});use.append(checkbox,document.createTextNode('Use'));

@@ -1,6 +1,7 @@
 // Compact, portable binary silhouettes. No browser or model dependency here.
-export const ANALYSIS_VERSION=1;
-export const ANALYSIS_MODEL='mediapipe-1.1.0-magic-touch-v2';
+export const ANALYSIS_VERSION=2;
+export const ANALYSIS_MODEL='mediapipe-1.1.0-face-edge-v3';
+const LEGACY_MODEL='mediapipe-1.1.0-magic-touch-v2';
 export const clamp=(v,lo=0,hi=1)=>Math.max(lo,Math.min(hi,v));
 export function encodeMask(pixels,width,height) {
   if(pixels.length!==width*height)throw new Error('Mask dimensions do not match.');
@@ -56,11 +57,14 @@ export function foregroundComponent(pixels,width,height,point) {
 export function subjectFromConfidence(values,width,height,point,{label='Subject',score=0,manual=false}={}) {
   const factor=Math.min(1,384/Math.max(width,height)),w=Math.max(1,Math.round(width*factor)),h=Math.max(1,Math.round(height*factor));
   const binary=new Uint8Array(w*h);
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++)binary[y*w+x]=values[Math.min(height-1,Math.floor((y+.5)*height/h))*width+Math.min(width-1,Math.floor((x+.5)*width/w))]>=0.5?1:0;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++)binary[y*w+x]=values[Math.min(height-1,Math.floor((y+.5)*height/h))*width+Math.min(width-1,Math.floor((x+.5)*width/w))]>=(manual?.64:.72)?1:0;
   const pixels=foregroundComponent(binary,w,h,point),bounds=maskBounds(pixels,w,h);
   if(!bounds||bounds.count/(w*h)<(manual?0.0007:0.002))return null;
+  const coverage=bounds.count/(w*h);
   const edges=(bounds.x===0)+(bounds.y===0)+(bounds.x+bounds.w>.995)+(bounds.y+bounds.h>.995);
-  if(bounds.count/(w*h)>.86&&edges>=3)return null;
+  // Never store an almost whole painting as a foreground subject.
+  if(coverage>(manual?.46:.38)||(edges>=3&&coverage>.22)||
+     (bounds.w>.89&&bounds.h>.89)||(Math.max(bounds.w,bounds.h)>.94&&coverage>.20))return null;
   let hash=2166136261;for(const pixel of pixels)hash=Math.imul(hash^pixel,16777619);
   const {count,...box}=bounds;
   return {id:'subject-'+(hash>>>0).toString(36),label,score,manual,bounds:box,mask:encodeMask(pixels,w,h)};
@@ -77,6 +81,9 @@ function validateBounds(b) {
 }
 export function validateAnalysis(input) {
   if(input===undefined||input===null)return undefined;
+  // Old MagicTouch results may include most of a painting. Reanalyse rather
+  // than reusing those silhouettes; old version-2 project images still load.
+  if(input.version===1&&input.model===LEGACY_MODEL)return undefined;
   if(input.version!==ANALYSIS_VERSION||input.model!==ANALYSIS_MODEL||!Array.isArray(input.subjects)||input.subjects.length>8||!Array.isArray(input.faces)||input.faces.length>12)throw new Error('Unsupported image analysis.');
   const ids=new Set();
   const subjects=input.subjects.map(s=>{
