@@ -106,6 +106,31 @@ function draw() {
   canvas.classList.toggle('picking',picking&&view==='cuts');
 }
 function poolChanged() {fragmentCache.clear();renderPool();renderResults();syncInspector();updateAnalysisStatus();rebuild();void persist();}
+function renderLayerList() {
+  const root=$('layer-list');root.replaceChildren();
+  const addRow=(id,label,isCurrent)=>{
+    const row=element('div','layer-item'+(isCurrent?' active':'')+(previewLayerId===id?' selected':''));
+    const title=element('span','layer-name',label);
+    const guide=element('button',null,'View guide');guide.type='button';
+    guide.setAttribute('aria-pressed',String(previewLayerId===id));
+    guide.setAttribute('aria-label','View layout map for '+label);
+    guide.addEventListener('click',()=>{previewLayerId=id;renderLayerList();chooseView($('view-layout'));});
+    row.append(title,guide);
+    if(!isCurrent) {
+      const remove=element('button',null,'Remove');remove.type='button';
+      remove.setAttribute('aria-label','Remove '+label+' from collage');
+      remove.addEventListener('click',()=>{
+        lockedLayers=lockedLayers.filter(l=>l.id!==id);
+        if(previewLayerId===id)previewLayerId='current';
+        fragmentCache.clear();syncControls();rebuild();void persist();
+        notice(label+' removed. The other layers are unchanged.');
+      });row.append(remove);
+    }else row.append(element('span','layer-name','EDITING'));
+    root.append(row);
+  };
+  lockedLayers.forEach((layer,i)=>addRow(layer.id,layer.name||'Layer '+(i+1),false));
+  addRow('current','Layer '+(lockedLayers.length+1)+' · active',true);
+}
 
 function syncInspector() {
   const select=$('cut-preview-image');select.replaceChildren();
@@ -169,6 +194,7 @@ function renderPool() {
     const img=element('img');img.src=image.objectURL;img.alt=image.title;img.title=image.title;
     const remove=element('button','remove-image','×');remove.setAttribute('aria-label','Remove '+image.title+' from pool');
     remove.addEventListener('click',()=>{
+      if(referencedLayerImages(lockedLayers).has(image.id)){notice('This image belongs to a locked layer. Remove that layer before deleting the image.',true);return;}
       images=images.filter(i=>i!==image);URL.revokeObjectURL(image.objectURL);poolChanged();
     });
     const title=element('p',null,image.title);title.title=image.title;
@@ -302,7 +328,7 @@ async function exportPNG() {
 async function saveProject() {
   $('save-project').disabled=true;
   try {
-    const project=await projectDocument(settings,images),blob=new Blob([JSON.stringify(project)],{type:'application/json'});
+    const project=await projectDocument(settings,images,lockedLayers),blob=new Blob([JSON.stringify(project)],{type:'application/json'});
     if(blob.size>MAX_PROJECT_BYTES)throw new Error('This project is too large to save. Remove some images.');
     download(blob,filename('json'));notice('Project saved with its image pool, settings and seeds.');
   } catch(error){notice('Project save failed: '+error.message,true);}finally{$('save-project').disabled=false;}
@@ -319,21 +345,49 @@ async function openProject(file) {
       const {data,...metadata}=item;const blob=await (await fetch(data)).blob();const loaded=await imageElement(blob);
       next.push({...metadata,blob,...loaded});
     }
-    analyser.cancelAll();analysisStates.clear();images.forEach(i=>URL.revokeObjectURL(i.objectURL));images=next;next=[];settings=project.settings;
-    cutKey='';layoutKey='';syncControls();rememberSettings();poolChanged();notice('Project opened.');
+    analyser.cancelAll();analysisStates.clear();images.forEach(i=>URL.revokeObjectURL(i.objectURL));images=next;next=[];
+    settings=project.settings;lockedLayers=project.layers;previewLayerId='current';currentScene=null;
+    cutKey='';layoutKey='';syncControls();rememberSettings();poolChanged();notice('Project opened with '+lockedLayers.length+' locked layers.');
   } catch(error){next.forEach(i=>URL.revokeObjectURL(i.objectURL));notice('The project could not be opened: '+error.message,true);}
   finally{$('project-input').value='';}
 }
 
 for(const [key,id] of Object.entries(controlMap)) {
   const input=$(id);input.addEventListener(input.type==='range'?'input':'change',()=>{
+    if(key==='orientation'&&lockedLayers.length){syncControls();notice('Remove locked layers before changing the canvas orientation.',true);return;}
     const value=input.type==='checkbox'?input.checked:input.type==='range'?Number(input.value):input.value;
     settings=sanitiseSettings({...settings,[key]:value});fragmentCache.clear();syncControls();rememberSettings();rebuild();
   });
 }
 const regenerate=(key,prefix)=>{settings={...settings,[key]:newSeed(prefix)};syncControls();rememberSettings();rebuild();};
 $('recut').addEventListener('click',()=>regenerate('cutSeed','CUT'));
-$('recompose').addEventListener('click',()=>regenerate('layoutSeed','LAYOUT'));
+function nextBaseline() {
+  const modes=['field','geometric','rects'];
+  const candidates=Array.from({length:9},(_,i)=>({mode:modes[i%3],seed:newSeed('LAYOUT')}));
+  return pickSpreadBaseline(A,settings,candidates);
+}
+$('new-baseline').addEventListener('click',()=>{
+  try {
+    const result=nextBaseline();
+    settings=sanitiseSettings({...settings,layoutSeed:result.seed,layoutMode:result.mode});
+    previewLayerId='current';
+    $('baseline-note').textContent='Selected a well-spread '+({field:'orbital',geometric:'constructed',rects:'recursive'}[result.mode])+' guide from 9 new variants.';
+    syncControls();rememberSettings();rebuild();
+  }catch(error){notice('Could not generate a baseline: '+error.message,true);}
+});
+$('lock-layer').addEventListener('click',()=>{
+  if(lockedLayers.length>=MAX_LOCKED_LAYERS){notice('This canvas supports up to '+MAX_LOCKED_LAYERS+' locked layers.',true);return;}
+  try {
+    if(!currentScene?.pieces.length)throw new Error('Add images to the active layer before locking it.');
+    const next=nextBaseline();
+    const newLayer=captureLayer(currentScene,crypto.randomUUID(),'Layer '+(lockedLayers.length+1));
+    lockedLayers=[...lockedLayers,newLayer];
+    settings=sanitiseSettings({...settings,layoutMode:next.mode,layoutSeed:next.seed});
+    previewLayerId='current';fragmentCache.clear();
+    syncControls();rememberSettings();rebuild();void persist();
+    notice(newLayer.name+' locked. Layer '+(lockedLayers.length+1)+' has a new independent guide.');
+  }catch(error){notice('Could not lock the layer: '+error.message,true);}
+});
 $('shuffle-images').addEventListener('click',()=>regenerate('imageSeed','POOL'));
 $('search-form').addEventListener('submit',event=>{event.preventDefault();void doSearch();});
 document.querySelectorAll('[data-topic]').forEach(button=>button.addEventListener('click',()=>{$('query').value=button.dataset.topic;void doSearch();}));
@@ -346,7 +400,9 @@ $('project-input').addEventListener('change',()=>void openProject($('project-inp
 $('export').addEventListener('click',()=>void exportPNG());$('credits-button').addEventListener('click',showCredits);
 $('close-credits').addEventListener('click',()=>$('credits-dialog').close());
 $('download-credits').addEventListener('click',()=>download(new Blob([creditsText(scene,images)],{type:'text/plain;charset=utf-8'}),filename('credits.txt')));
-$('clear-pool').addEventListener('click',()=>{analyser.cancelAll();analysisStates.clear();images.forEach(i=>URL.revokeObjectURL(i.objectURL));images=[];poolChanged();});
+$('clear-pool').addEventListener('click',()=>{
+  if(lockedLayers.length){notice('Remove locked layers before clearing their source images.',true);return;}
+  analyser.cancelAll();analysisStates.clear();images.forEach(i=>URL.revokeObjectURL(i.objectURL));images=[];poolChanged();});
 $('pool-select-all').addEventListener('click',()=>{images.forEach(i=>i.enabled=true);poolChanged();});
 const tabs=Array.from(document.querySelectorAll('[data-view]'));
 function chooseView(button) {
@@ -384,14 +440,16 @@ document.addEventListener('drop',event=>{if(!event.dataTransfer.files.length)ret
 
 syncControls();
 try {
-  const stored=await readPool();
-  for(const item of stored.slice(0,MAX_IMAGES)) {
+  const stored=await readWorkspace();
+  for(const item of stored.images.slice(0,MAX_IMAGES)) {
     try {
       if(!(item.blob instanceof Blob)||!RASTER_TYPES.includes(item.blob.type))continue;
       let analysis;try{analysis=validateAnalysis(item.analysis);}catch{}
       images.push({...item,analysis,...await imageElement(item.blob)});
     }catch {notice('One saved image could not be reopened. The rest of your pool is available.',true);}
   }
-  $('storage-status').textContent='Pool saved in this browser. Save a project for a portable copy.';
+  try {lockedLayers=validateLockedLayers(stored.layers,images.map(i=>i.id),settings.orientation);}
+  catch(error){lockedLayers=[];notice('The saved layer stack could not be restored: '+error.message,true);}
+  $('storage-status').textContent='Pool and layers saved in this browser. Save a project for a portable copy.';
 } catch {$('storage-status').textContent='Browser storage is unavailable. Save a project file to keep your pool.';$('storage-status').classList.add('error');}
 hydrating=false;renderPool();syncInspector();updateAnalysisStatus();rebuild();
