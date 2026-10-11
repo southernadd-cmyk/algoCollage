@@ -48,7 +48,7 @@ try {
     await page.waitForFunction(()=>document.querySelectorAll('#pool .analysis-badge').length===2,null,{timeout:30000});
     await page.waitForFunction(()=>{
       const badges=[...document.querySelectorAll('#pool .analysis-badge')].map(n=>n.textContent||'');
-      return badges.length===2 && badges.every(t=>/subject|Large fragments/.test(t));
+      return badges.length===2 && badges.every(t=>/^\d+ subjects?$/.test(t)||/^Large fragments/.test(t));
     },null,{timeout:300000});
     const badgeText=await page.locator('#pool .analysis-badge').allTextContents();
     record('Per-photo analysis results: '+JSON.stringify(badgeText));
