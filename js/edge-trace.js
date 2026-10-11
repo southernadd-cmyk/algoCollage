@@ -85,3 +85,38 @@ export function traceEdgeMask(edges,width,height,bounds,{kind='face'}={}) {
   }
   return result;
 }
+
+/* For paintings that neither model recognises, choose a small textured focal
+ * detail from the source itself. This is NOT called an identified face/object.
+ * It is deliberately bounded; ALGO/ART still chooses where it is placed. */
+export function salientDetails(edges,width,height,count=1) {
+  const integral=new Float64Array((width+1)*(height+1)),stride=width+1;
+  for(let y=1;y<=height;y++)for(let x=1;x<=width;x++) {
+    const value=edges[(y-1)*width+x-1];
+    integral[y*stride+x]=value+integral[(y-1)*stride+x]+integral[y*stride+x-1]-integral[(y-1)*stride+x-1];
+  }
+  const boxSum=(x0,y0,x1,y1)=>integral[y1*stride+x1]-integral[y0*stride+x1]-integral[y1*stride+x0]+integral[y0*stride+x0];
+  const bw=Math.max(10,Math.min(width,Math.round(width*.24))),bh=Math.max(10,Math.min(height,Math.round(height*.25)));
+  const proposals=[];
+  for(let y=Math.ceil(bh/2);y<=height-bh/2;y+=Math.max(5,Math.round(height*.045))) {
+    for(let x=Math.ceil(bw/2);x<=width-bw/2;x+=Math.max(5,Math.round(width*.045))) {
+      const x0=Math.floor(x-bw/2),y0=Math.floor(y-bh/2),x1=x0+bw,y1=y0+bh;
+      const density=boxSum(x0,y0,x1,y1)/(bw*bh);
+      const nx=x/width,ny=y/height;
+      // A gentle upper-centre bias favours faces in classical portraits
+      // without claiming that edge density is semantic face recognition.
+      const prior=1-.45*Math.min(1,Math.hypot((nx-.5)*1.1,(ny-.36)*1.35));
+      proposals.push({x,y,density,score:density*prior});
+    }
+  }
+  proposals.sort((a,b)=>b.score-a.score);
+  const out=[];
+  for(const p of proposals) {
+    if(out.length>=count)break;
+    if(p.density<.018)break; // refuse a flat field
+    if(out.some(o=>Math.hypot(o.point.x-p.x/width,o.point.y-p.y/height)<.25))continue;
+    const b={x:clamp((p.x-bw/2)/width,0,1-bw/width),y:clamp((p.y-bh/2)/height,0,1-bh/height),w:bw/width,h:bh/height};
+    out.push({kind:'detail',bounds:b,point:centre(b),label:'Edge-selected detail',score:0});
+  }
+  return out;
+}
