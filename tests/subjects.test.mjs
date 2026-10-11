@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {encodeMask,decodeMask,subjectFromConfidence,validateAnalysis,ANALYSIS_VERSION,ANALYSIS_MODEL,foregroundComponent} from '../js/subject-data.js';
 import {makeImageCuts,rankedSubjects,partialSubjectBounds} from '../js/image-cuts.js';
+import {chooseCandidates,sobelEdges,traceEdgeMask} from '../js/edge-trace.js';
 import {DEFAULTS,ENGINE_COMMIT} from '../js/composition.js';
 import {validateProject,projectDocument} from '../js/storage.js';
 
@@ -34,7 +35,7 @@ test('subject tracing keeps the foreground near the seed and rejects a full back
 
 test('fallback fragments preserve the source aspect ratio and retain substantially more image',()=>{
   for(const [width,height] of [[1600,800],[800,1600]]) {
-    const cuts=makeImageCuts(guide,DEFAULTS,{width,height});
+    const cuts=makeImageCuts(guide,{...DEFAULTS,cutStyle:'regions'},{width,height});
     assert.equal(cuts.width,width);assert.equal(cuts.height,height);assert.equal(cuts.kind,'regions');
     for(const {bounds,sourceWidth,sourceHeight} of cuts.masks) {
       assert.ok(bounds.w*bounds.h/(width*height)>.65);
@@ -42,8 +43,8 @@ test('fallback fragments preserve the source aspect ratio and retain substantial
       assert.ok(bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.w<=width+1e-7&&bounds.y+bounds.h<=height+1e-7);
     }
   }
-  const small=makeImageCuts(guide,{...DEFAULTS,cutSize:35},{width:1600,height:800});
-  assert.ok(small.masks[0].bounds.w<makeImageCuts(guide,DEFAULTS,{width:1600,height:800}).masks[0].bounds.w);
+  const small=makeImageCuts(guide,{...DEFAULTS,cutStyle:'regions',cutSize:35},{width:1600,height:800});
+  assert.ok(small.masks[0].bounds.w<makeImageCuts(guide,{...DEFAULTS,cutStyle:'regions'},{width:1600,height:800}).masks[0].bounds.w);
 });
 
 test('Algo Art territories rank objects while whole-subject mode retains the full silhouette',()=>{
@@ -121,4 +122,46 @@ test('version 2 projects keep subject masks and version 1 projects keep their or
     assert.equal(saved.version,2);assert.deepEqual(saved.images[0].analysis,analysis);
     assert.ok(!('element' in saved.images[0]));assert.ok(!('objectURL' in saved.images[0]));
   }finally {globalThis.FileReader=oldFileReader;}
+});
+
+
+test('a portrait face outranks a broad person box and manual face picking',()=>{
+  const face={x:.38,y:.24,w:.2,h:.2};
+  const wholePainting={bounds:{x:.03,y:.02,w:.94,h:.96},score:.95,label:'person'};
+  const selections=chooseCandidates([wholePainting],[face]);
+  assert.equal(selections.length,1);
+  assert.equal(selections[0].kind,'face');
+  assert.deepEqual(selections[0].bounds,face);
+  assert.equal(chooseCandidates([wholePainting],[face],{x:.46,y:.33})[0].kind,'face');
+  assert.equal(chooseCandidates([wholePainting],[],{x:.46,y:.33})[0].kind,'detail');
+  assert.deepEqual(chooseCandidates([wholePainting],[]),[]);
+});
+
+test('edge-guided contours stay within a detected face rather than spreading into its painting',()=>{
+  const w=128,h=128,data=new Uint8ClampedArray(w*h*4);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++) {
+    const i=4*(y*w+x),value=x>=40&&x<88&&y>=32&&y<80?50:220;
+    data[i]=data[i+1]=data[i+2]=value;data[i+3]=255;
+  }
+  const edges=sobelEdges(data,w,h);
+  const face={x:39/w,y:31/h,w:50/w,h:50/h};
+  const extracted=traceEdgeMask(edges,w,h,face);
+  const subject=subjectFromConfidence(extracted,w,h,{x:.5,y:.43},{label:'Face / head'});
+  assert.ok(subject,'trace produces a subject');
+  assert.ok(subject.bounds.w<.52&&subject.bounds.h<.55,'only a local head region survives');
+  assert.equal(decodeMask(subject.mask)[0],0,'canvas background is not selected');
+  assert.ok([...extracted].reduce((n,p)=>n+p,0)/(w*h)<.19);
+});
+
+test('oversensitive painterly foreground and stale cached masks cannot survive as objects',()=>{
+  const w=100,h=100,confidence=new Float32Array(w*h);
+  for(let y=6;y<95;y++)for(let x=5;x<95;x++)confidence[y*w+x]=1;
+  assert.equal(subjectFromConfidence(confidence,w,h,{x:.5,y:.5}),null);
+  const noSubjects=makeImageCuts(guide,DEFAULTS,{width:1200,height:800});
+  assert.equal(noSubjects.kind,'details');
+  assert.ok(noSubjects.masks.every(m=>m.bounds.w*m.bounds.h/(1200*800)<.28));
+  const oldMask={version:1,model:'mediapipe-1.1.0-magic-touch-v2',subjects:[subject],faces:[]};
+  assert.equal(validateAnalysis(oldMask),undefined,'old saved segmentation is deliberately recalculated');
+  const oldProject={app:'ALGO/COLLAGE',version:2,engineCommit:ENGINE_COMMIT,settings:DEFAULTS,images:[{id:'old',data:'data:image/png;base64,aGVsbG8=',analysis:oldMask}]};
+  assert.equal(validateProject(oldProject).images[0].analysis,undefined,'legacy projects still open');
 });
