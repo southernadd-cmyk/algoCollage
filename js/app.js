@@ -550,6 +550,16 @@ $('more-results').addEventListener('click',()=>void doSearch(true));
 $('provider').addEventListener('change',resetSearch);$('license-policy').addEventListener('change',resetSearch);
 $('upload-button').addEventListener('click',()=>$('upload-input').click());$('empty-upload').addEventListener('click',()=>$('upload-input').click());
 $('upload-input').addEventListener('change',()=>void addUploads($('upload-input').files));
+$('cut-upload').addEventListener('click',()=>$('cut-upload-input').click());
+$('cut-upload-input').addEventListener('change',()=>{void addUploads($('cut-upload-input').files);$('cut-upload-input').value='';});
+$('cut-find-more').addEventListener('click',()=>{closeCutRoom();document.querySelector('.source-section').scrollIntoView({behavior:'smooth'});});
+for(const id of ['open-cut-room','go-to-cutting','view-cuts','empty-cut-room'])
+  $(id).addEventListener('click',()=>openCutRoom());
+$('close-cut-room').addEventListener('click',closeCutRoom);
+$('cut-room').addEventListener('close',()=>{
+  picking=false;archivedCutLayer=null;$('pick-subject').setAttribute('aria-pressed','false');
+});
+$('transfer-cutouts').addEventListener('click',transferCutouts);
 $('save-project').addEventListener('click',()=>void saveProject());$('open-project').addEventListener('click',()=>$('project-input').click());
 $('project-input').addEventListener('change',()=>void openProject($('project-input').files[0]));
 $('export').addEventListener('click',()=>void exportPNG());$('credits-button').addEventListener('click',showCredits);
@@ -575,19 +585,23 @@ tabs.forEach((button,i)=>{
     chooseView(target);target.focus();
   });
 });
-$('cut-preview-image').addEventListener('change',()=>{previewImageId=$('cut-preview-image').value;picking=false;$('pick-subject').setAttribute('aria-pressed','false');draw();});
+$('cut-preview-image').addEventListener('change',()=>{previewImageId=$('cut-preview-image').value;picking=false;$('pick-subject').setAttribute('aria-pressed','false');renderCutRoom();});
 $('find-subjects').addEventListener('click',()=>{
   for(const image of images)if(image.enabled!==false)void analyseImage(image);
 });
 $('pick-subject').addEventListener('click',()=>{
+  if(archivedCutLayer)return;
   picking=!picking;$('pick-subject').setAttribute('aria-pressed',String(picking));
-  $('pick-help').textContent=picking?'Click or tap inside the object you want to keep.':'Dashed lines are ALGO/ART regions. Bright areas are the pieces retained.';draw();
+  $('pick-help').textContent=picking?'Click or tap inside the object you want to keep.':'Dashed lines are ALGO/ART regions. Bright areas are the pieces retained.';renderCutRoom();
 });
-$('artwork').addEventListener('click',event=>{
-  if(!picking||view!=='cuts'||settings.cutStyle!=='subjects')return;
+$('cut-workspace-canvas').addEventListener('click',event=>{
+  if(!picking||!$('cut-room').open||archivedCutLayer||settings.cutStyle!=='subjects')return;
   const image=images.find(i=>i.id===previewImageId);if(!image)return;
-  const rect=$('artwork').getBoundingClientRect(),point={x:(event.clientX-rect.left)/rect.width,y:(event.clientY-rect.top)/rect.height};
-  picking=false;$('pick-subject').setAttribute('aria-pressed','false');$('pick-help').textContent='Tracing the selected subject…';draw();void analyseImage(image,point);
+  const rect=$('cut-workspace-canvas').getBoundingClientRect();
+  const point={x:(event.clientX-rect.left)/rect.width,y:(event.clientY-rect.top)/rect.height};
+  if(point.x<0||point.x>1||point.y<0||point.y>1)return;
+  picking=false;$('pick-subject').setAttribute('aria-pressed','false');$('pick-help').textContent='Tracing the selected subject…';
+  renderCutRoom();void analyseImage(image,point);
 });
 let dragCount=0;
 document.addEventListener('dragover',event=>{if(event.dataTransfer.types.includes('Files')){event.preventDefault();event.dataTransfer.dropEffect='copy';}});
