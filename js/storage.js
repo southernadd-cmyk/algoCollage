@@ -3,6 +3,7 @@ import { MAX_IMAGES, MAX_PROJECT_BYTES, MAX_IMAGE_BYTES, RASTER_TYPES, safeURL, 
 import {validateAnalysis} from './subject-data.js';
 import {validateLockedLayers} from './layer-stack.js';
 import {validateCutouts} from './layer-workflow.js';
+import {validateHandCuts} from './hand-cuts.js';
 
 function database() {
   return new Promise((resolve,reject)=>{
@@ -70,7 +71,8 @@ export function validateProject(project) {
     return {id:image.id, title:plainText(image.title || 'Untitled image'), creator:plainText(image.creator),
       license:plainText(image.license || 'User supplied'), sourceUrl:safeURL(image.sourceUrl), licenseUrl:safeURL(image.licenseUrl),
       provider:plainText(image.provider || 'Upload'), query:plainText(image.query), enabled:image.enabled!==false, data:image.data,
-      analysis:validateAnalysis(image.analysis)};
+      analysis:validateAnalysis(image.analysis),
+      handCuts:validateHandCuts(image.handCuts)};
   });
   // Keep the original cutter when reopening an old project, so its pixels do not change.
   const input=project.version===1?{...project.settings,cutStyle:'geometric'}:project.settings;

@@ -187,6 +187,38 @@ try {
     await page.locator('#close-cut-room').click();
     await saveScreenshot('layered-collage');
   });
+  await stage('Real mouse-drawn freehand cutting, undo, transfer and persistence',async()=>{
+    await page.locator('#go-to-cutting').click();
+    await page.locator('#cut-room').waitFor({state:'visible'});
+    await page.locator('#cut-source-list .cut-source').first().click();
+    await page.locator('#cut-style').selectOption('manual');
+    await page.locator('#freehand-overlay').waitFor({state:'visible'});
+    assert.ok(await page.locator('#cut-mode').isDisabled(),'ALGO/ART geometry does not change a handmade outline');
+    assert.equal(await page.locator('#cutout-candidates .cutout-card').count(),0,
+      'Freehand mode must begin with a clean image, not automatic cutout suggestions');
+    const overlay=page.locator('#freehand-overlay');
+    const draw=async()=>{
+      const b=await overlay.boundingBox();
+      assert.ok(b?.width>100&&b?.height>100,'A usable canvas is required');
+      const route=[[.15,.19],[.65,.19],[.72,.32],[.68,.79],[.23,.83],[.13,.54],[.15,.19]];
+      await page.mouse.move(b.x+route[0][0]*b.width,b.y+route[0][1]*b.height);
+      await page.mouse.down();
+      for(const [x,y] of route.slice(1))await page.mouse.move(b.x+x*b.width,b.y+y*b.height,{steps:10});
+      await page.mouse.up();
+    };
+    await draw();
+    await page.waitForFunction(()=>document.querySelector('#candidate-count')?.textContent?.startsWith('1 hand-drawn'));
+    assert.equal(await page.locator('#cutout-selection .cutout-tray-item').count(),1,'New manual scrap should be auto-selected');
+    await saveScreenshot('freehand-scissors');
+    await page.locator('#undo-hand-cut').click();
+    await page.waitForFunction(()=>document.querySelector('#candidate-count')?.textContent?.startsWith('0 hand-drawn'));
+    await draw();
+    await page.waitForFunction(()=>document.querySelector('#candidate-count')?.textContent?.startsWith('1 hand-drawn'));
+    await page.locator('#transfer-cutouts').click();
+    await page.locator('#cut-room').waitFor({state:'hidden'});
+    assert.match(await page.locator('#canvas-info').innerText(),/3 pieces across 3 layers/);
+    record('Freehand scrap transferred to third-layer assembly board');
+  });
   await stage('PNG export and portable project round trip',async()=>{
     const exportEvent=page.waitForEvent('download',{timeout:45000});
     await page.locator('#export').click();
@@ -206,6 +238,8 @@ try {
     const project=JSON.parse(await readFile(projectPath,'utf8'));
     assert.equal(project.version,4);
     assert.equal(project.cutouts.length,1,'The active layer transfer tray must survive portable projects');
+    assert.equal(project.cutouts[0].mask.kind,'manual','Active layer should hold the drawn manual cut');
+    assert.ok(project.images.some(img=>img.handCuts?.length),'Saved project lost the hand-drawn path');
     assert.equal(project.layers.length,2,'Both frozen layers must be included in the project');
     assert.ok(project.layers.every(layer=>layer.layout?.slots?.length&&layer.pieces?.length),'Each locked layer must retain its layout map and cut geometry');
     assert.equal(project.images.length,fixtures.length);
