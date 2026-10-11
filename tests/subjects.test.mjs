@@ -68,6 +68,33 @@ test('partial object cuts expand around faces instead of bisecting them',()=>{
   assert.ok(window.x+window.w>=face.x+face.w&&window.y+window.h>=face.y+face.h);
 });
 
+test('ALGO/ART regions choose visible foreground rather than misleading bounding boxes',()=>{
+  const w=32,h=32,left=new Uint8Array(w*h),right=new Uint8Array(w*h);
+  for(let y=8;y<24;y++)for(let x=0;x<8;x++)left[y*w+x]=1;
+  for(let y=8;y<24;y++)for(let x=24;x<32;x++)right[y*w+x]=1;
+  const common={label:'Shape',score:1,manual:false,bounds:{x:0,y:0,w:1,h:1}};
+  const a={...common,id:'left',mask:encodeMask(left,w,h)};
+  const b={...common,id:'right',mask:encodeMask(right,w,h)};
+  const territory={x:.68,y:.2,w:.25,h:.6,index:7};
+  assert.deepEqual(rankedSubjects([a,b],[territory]).map(entry=>entry.subject.id),['right','left']);
+  assert.deepEqual(rankedSubjects([b,a],[{...territory,x:.07}]).map(entry=>entry.subject.id),['left','right']);
+});
+
+test('partial cuts follow a nearby real silhouette instead of an empty guide hole',()=>{
+  const w=32,h=32,pixels=new Uint8Array(w*h);
+  // An L-shaped silhouette touches the left edge and bottom. Its top-right
+  // bounding-box area contains no pixels, but the guide points there.
+  for(let y=1;y<32;y++)for(let x=0;x<4;x++)pixels[y*w+x]=1;
+  for(let y=28;y<32;y++)for(let x=0;x<32;x++)pixels[y*w+x]=1;
+  const lShape={bounds:{x:0,y:0,w:1,h:1},mask:encodeMask(pixels,w,h)};
+  const guide={x:.68,y:.02,w:.24,h:.24};
+  const window=partialSubjectBounds(lShape,guide,35,[]);
+  assert.ok(window.x<.15,'the crop reaches the visible left-hand foreground');
+  assert.ok(window.y<.2,'the crop remains close to the selected guide');
+  const same=partialSubjectBounds(lShape,guide,35,[]);
+  assert.deepEqual(window,same,'selection remains deterministic');
+});
+
 test('version 2 projects keep subject masks and version 1 projects keep their original cutter',async()=>{
   const image={id:'one',data:'data:image/png;base64,aGVsbG8=',analysis};
   const project={app:'ALGO/COLLAGE',version:2,engineCommit:ENGINE_COMMIT,settings:DEFAULTS,images:[image]};
