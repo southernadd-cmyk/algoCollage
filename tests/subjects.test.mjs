@@ -38,7 +38,7 @@ test('fallback fragments preserve the source aspect ratio and retain substantial
     const cuts=makeImageCuts(guide,{...DEFAULTS,cutStyle:'regions'},{width,height});
     assert.equal(cuts.width,width);assert.equal(cuts.height,height);assert.equal(cuts.kind,'regions');
     for(const {bounds,sourceWidth,sourceHeight} of cuts.masks) {
-      assert.ok(bounds.w*bounds.h/(width*height)>.65);
+      assert.ok(bounds.w*bounds.h/(width*height)<.5,'photographic fragments must no longer swallow nearly the full photograph');
       assert.equal(sourceWidth,width);assert.equal(sourceHeight,height);
       assert.ok(bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.w<=width+1e-7&&bounds.y+bounds.h<=height+1e-7);
     }
@@ -60,6 +60,23 @@ test('Algo Art territories rank objects while whole-subject mode retains the ful
   const partial=makeImageCuts(guide,{...DEFAULTS,wholeSubjects:false},{width:1600,height:800,analysis});
   assert.ok(partial.masks[0].bounds.w<cuts.masks[0].bounds.w);
   assert.notEqual(partial.masks[0].id,cuts.masks[0].id);
+  assert.equal(partial.masks.length,3,'partial mode offers several distinct sections even for a single face');
+  assert.equal(new Set(partial.masks.map(p=>JSON.stringify(p.bounds))).size,3,'three cuts must have different windows');
+});
+
+test('one recognised Mona Lisa face produces genuinely different cutting outputs',()=>{
+  const painting={width:500,height:750,analysis:{
+    ...analysis,subjects:[{...subject,id:'mona-face',label:'Face / head',bounds:{x:.35,y:.15,w:.3,h:.26}}]}};
+  const full=makeImageCuts(guide,{...DEFAULTS,cutStyle:'subjects',wholeSubjects:true},painting);
+  const partial=makeImageCuts(guide,{...DEFAULTS,cutStyle:'subjects',wholeSubjects:false},painting);
+  const photo=makeImageCuts(guide,{...DEFAULTS,cutStyle:'regions'},painting);
+  assert.equal(full.masks.length,1);
+  assert.ok(partial.masks.length>=3);
+  assert.ok(photo.masks.length>=2);
+  assert.ok(photo.masks.every(m=>!m.alpha),'photo fragments must not reuse detected face alpha');
+  assert.ok(partial.masks.every(m=>m.alpha),'partial face details must stay inside its recognised mask');
+  assert.ok(photo.masks.some(m=>m.bounds.w>full.masks[0].bounds.w),'photo fragments cover a different area from the face');
+  assert.ok(new Set(partial.masks.map(m=>JSON.stringify(m.bounds))).size>=3);
 });
 
 test('partial object cuts expand around faces instead of bisecting them',()=>{
