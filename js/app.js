@@ -8,6 +8,7 @@ import { pngWithCredits } from './png.js';
 import { SubjectAnalyser } from './analysis.js';
 import { guideRegions } from './image-cuts.js';
 import { validateAnalysis, duplicateSubject } from './subject-data.js';
+import { freehandOutline, handMasksForImage, validateHandCuts, MAX_HAND_CUTS } from './hand-cuts.js';
 
 if (document.readyState === 'loading') await new Promise(resolve=>document.addEventListener('DOMContentLoaded',resolve,{once:true}));
 const $=id=>document.getElementById(id);
@@ -19,7 +20,7 @@ let activeCutouts=[],stagedCutouts=[],archivedCutLayer=null,legacyCutoutMigratio
 let searchController=null, searchSerial=0, searchState=null, searchResults=[], adding=new Set();
 let persistQueue=Promise.resolve(), frame=null, noticeTimer=null, hydrating=true;
 const analyser=new SubjectAnalyser(),analysisStates=new Map();
-let previewImageId=null,picking=false,pendingCutReconcile=false,cutNotice='';
+let previewImageId=null,picking=false,pendingCutReconcile=false,cutNotice='',drawingStroke=null;
 
 function notice(text,error=false) {
   clearTimeout(noticeTimer);const node=$('notice');node.textContent=text;node.classList.toggle('error',error);node.hidden=false;
@@ -60,7 +61,7 @@ function syncControls() {
     const output=$(key+'-value');if(output)output.value=String(settings[key]);
   }
   $('whole-subjects').disabled=settings.cutStyle!=='subjects';
-  $('cut-size').disabled=settings.cutStyle==='geometric'||(settings.cutStyle==='subjects'&&settings.wholeSubjects);
+  $('cut-size').disabled=['geometric','manual'].includes(settings.cutStyle)||(settings.cutStyle==='subjects'&&settings.wholeSubjects);
   $('orientation').disabled=lockedLayers.length>0;
   $('baseline-kind').textContent={field:'Orbital studies',geometric:'Constructed forms',rects:'Recursive divisions'}[settings.layoutMode]||'ALGO/ART';
   updateAnalysisStatus();
@@ -128,6 +129,7 @@ function sourceMasks(image) {
   return (currentScene?.imageCuts?.[image.id]?.masks||cuts?.masks||[]);
 }
 function openCutRoom(layerId='current') {
+  drawingStroke=null;
   archivedCutLayer=layerId==='current'?null:lockedLayers.find(layer=>layer.id===layerId)||null;
   if(layerId!=='current'&&!archivedCutLayer)return;
   if(!archivedCutLayer&&!stagedCutouts.length&&activeCutouts.length)stagedCutouts=activeCutouts.slice();
@@ -139,6 +141,7 @@ function openCutRoom(layerId='current') {
   $('close-cut-room').focus();
 }
 function closeCutRoom() {
+  drawingStroke=null;
   picking=false;$('pick-subject').setAttribute('aria-pressed','false');
   $('cut-room').close();archivedCutLayer=null;
 }
@@ -163,16 +166,19 @@ function renderCutRoom() {
   $('cut-room').classList.toggle('archive',!!archive);
   const selectedForUI=available.find(i=>i.id===previewImageId);
   const recognised=settings.cutStyle==='subjects'&&settings.wholeSubjects&&!!selectedForUI?.analysis?.subjects?.length;
-  const geometric=settings.cutStyle==='geometric';
-  $('cut-mode').disabled=!!archive||recognised;
-  $('recut').disabled=!!archive||recognised;
-  $('cut-seed').disabled=!!archive||recognised;
-  $('detail').disabled=!!archive||recognised;
-  $('cut-size').disabled=!!archive||geometric||(settings.cutStyle==='subjects'&&settings.wholeSubjects);
+  const geometric=settings.cutStyle==='geometric',manual=settings.cutStyle==='manual';
+  $('cut-room').querySelector('.cut-room-tools').classList.toggle('freehand-method',manual);
+  $('cut-mode').disabled=!!archive||recognised||manual;
+  $('recut').disabled=!!archive||recognised||manual;
+  $('cut-seed').disabled=!!archive||recognised||manual;
+  $('detail').disabled=!!archive||recognised||manual;
+  $('cut-size').disabled=!!archive||geometric||manual||(settings.cutStyle==='subjects'&&settings.wholeSubjects);
   $('whole-subjects').disabled=!!archive||settings.cutStyle!=='subjects';
   $('cut-style').disabled=!!archive;
-  $('cut-geometry-options').classList.toggle('inactive-method',recognised);
-  const explanation=settings.cutStyle==='subjects'
+  $('cut-geometry-options').classList.toggle('inactive-method',recognised||manual);
+  const explanation=manual
+    ?'FREEHAND SCISSORS — draw a continuous outline directly around a part of the source picture. Lift the mouse, finger or pen to close the loop. The cut becomes a reusable paper scrap; ALGO/ART still arranges it on the board.'
+    :settings.cutStyle==='subjects'
     ?settings.wholeSubjects
       ?'RECOGNISED SILHOUETTE — the complete detected face or object is cut out. It keeps its real outline, so ALGO/ART region changes do not reshape it. Untick Keep whole subjects for three distinct detail cuts, or choose another method.'
       :'OBJECT DETAILS — three different sections of each recognised face or object. ALGO/ART cutting regions affect where the details come from. The face is not reused as one identical piece.'
@@ -192,16 +198,23 @@ function renderCutRoom() {
     button.type='button';button.setAttribute('aria-pressed',String(previewImageId===image.id));
     const img=element('img');img.src=image.objectURL;img.alt='';
     button.append(img,element('span',null,image.title));button.title=image.title;
-    button.addEventListener('click',()=>{previewImageId=image.id;syncInspector();renderCutRoom();});
+    button.addEventListener('click',()=>{drawingStroke=null;previewImageId=image.id;syncInspector();renderCutRoom();});
     list.append(button);
   }
   $('cut-inspector').hidden=!available.length;
+  $('pick-subject').hidden=manual;
   const selected=available.find(i=>i.id===previewImageId),masks=selected
     ?archive?archive.pieces.filter(piece=>piece.imageId===selected.id).map(piece=>piece.mask):sourceMasks(selected):[];
   const sourceScene=archive?{settings, cuts:{width:archive.cuts.width,height:archive.cuts.height,masks:[]},
     imageCuts:Object.fromEntries(available.map(img=>[img.id,{width:img.element.naturalWidth,height:img.element.naturalHeight,
       masks:archive.pieces.filter(piece=>piece.imageId===img.id).map(piece=>piece.mask),kind:'subjects'}]))}:currentScene;
   renderCutMap($('cut-workspace-canvas'),sourceScene,available,{scale:.7,imageId:previewImageId});
+  const overlay=$('freehand-overlay'),freehandVisible=manual&&!archive&&!!selected;
+  $('freehand-controls').hidden=!freehandVisible;overlay.hidden=!freehandVisible;
+  $('undo-hand-cut').disabled=!freehandVisible||!selected?.handCuts?.length;
+  $('clear-hand-cuts').disabled=!freehandVisible||!selected?.handCuts?.length;
+  if(freehandVisible){overlay.width=$('cut-workspace-canvas').width;overlay.height=$('cut-workspace-canvas').height;paintFreehandStroke();}
+  $('freehand-help').textContent=selected?.handCuts?.length?selected.handCuts.length+' freehand cut'+(selected.handCuts.length===1?'':'s')+' saved on this photograph. Draw another or transfer the chosen scraps.':'Press and drag around the shape you want. Release to close the cut. Your new scrap is selected automatically.';
   $('cut-workspace-canvas').classList.toggle('picking',picking&&!archive);
   $('cut-room-count').textContent=selected?masks.length+' visible cuts':'No source selected';
   $('pick-subject').disabled=!!archive||settings.cutStyle!=='subjects'||!selected||analysisStates.get(selected)?.busy===true;
@@ -210,7 +223,7 @@ function renderCutRoom() {
     imageId:piece.imageId,key:'archived:'+index,mask:piece.mask,
     cutWidth:piece.layerCuts.width,cutHeight:piece.layerCuts.height
   })):stagedCutouts;
-  $('candidate-count').textContent=masks.length+' '+(settings.cutStyle==='subjects'?'recognised/detail':settings.cutStyle==='regions'?'photographic':'geometric')+' cutouts';
+  $('candidate-count').textContent=masks.length+' '+(manual?'hand-drawn':settings.cutStyle==='subjects'?'recognised/detail':settings.cutStyle==='regions'?'photographic':'geometric')+' cutouts';
   if(!selected)candidates.append(element('p','small-note','Add images, then choose a source.'));
   for(const mask of masks) {
     const cutout=archive?null:cutoutFromMask(selected,mask,cuts),isChosen=cutout&&saved.some(c=>c.key===cutout.key);
@@ -533,7 +546,7 @@ for(const [key,id] of Object.entries(controlMap)) {
     }
     if(['cutMode','cutSeed','detail','cutStyle','cutSize','wholeSubjects'].includes(key)){
       pendingCutReconcile=true;
-      if(key==='cutStyle')picking=false;
+      if(key==='cutStyle'){picking=false;drawingStroke=null;}
     }
     settings=sanitiseSettings({...settings,[key]:value});fragmentCache.clear();syncControls();rememberSettings();rebuild();
   });
@@ -591,7 +604,7 @@ for(const id of ['open-cut-room','go-to-cutting','empty-cut-room'])
   $(id).addEventListener('click',()=>openCutRoom());
 $('close-cut-room').addEventListener('click',closeCutRoom);
 $('cut-room').addEventListener('close',()=>{
-  picking=false;archivedCutLayer=null;$('pick-subject').setAttribute('aria-pressed','false');
+  picking=false;drawingStroke=null;archivedCutLayer=null;$('pick-subject').setAttribute('aria-pressed','false');
 });
 $('transfer-cutouts').addEventListener('click',transferCutouts);
 $('reset-cut-tray').addEventListener('click',()=>{
@@ -623,7 +636,7 @@ tabs.forEach((button,i)=>{
     chooseView(target);target.focus();
   });
 });
-$('cut-preview-image').addEventListener('change',()=>{previewImageId=$('cut-preview-image').value;picking=false;$('pick-subject').setAttribute('aria-pressed','false');renderCutRoom();});
+$('cut-preview-image').addEventListener('change',()=>{drawingStroke=null;previewImageId=$('cut-preview-image').value;picking=false;$('pick-subject').setAttribute('aria-pressed','false');renderCutRoom();});
 $('find-subjects').addEventListener('click',()=>{
   for(const image of images)if(image.enabled!==false)void analyseImage(image);
 });
@@ -654,7 +667,7 @@ try {
     try {
       if(!(item.blob instanceof Blob)||!RASTER_TYPES.includes(item.blob.type))continue;
       let analysis;try{analysis=validateAnalysis(item.analysis);}catch{}
-      images.push({...item,analysis,...await imageElement(item.blob)});
+      images.push({...item,analysis,handCuts:validateHandCuts(item.handCuts),...await imageElement(item.blob)});
     }catch {notice('One saved image could not be reopened. The rest of your pool is available.',true);}
   }
   try {lockedLayers=validateLockedLayers(stored.layers,images.map(i=>i.id),settings.orientation);}
