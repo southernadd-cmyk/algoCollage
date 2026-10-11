@@ -40,16 +40,16 @@ try {
     const response=await page.goto(site,{waitUntil:'domcontentloaded',timeout:60000});
     assert.ok(response?.ok(),'Site responded with HTTP '+response?.status());
     await page.locator('#upload-input').waitFor({state:'attached',timeout:20000});
-    await page.waitForFunction(()=>document.querySelector('#cut-style')?.value==='subjects',{timeout:15000});
+    await page.waitForFunction(()=>document.querySelector('#cut-style')?.value==='subjects',null,{timeout:15000});
     assert.match(await page.title(),/ALGO\/COLLAGE/);
   });
   await stage('Photographs upload and trigger subject analysis',async()=>{
     await page.locator('#upload-input').setInputFiles([dog,person]);
-    await page.waitForFunction(()=>document.querySelectorAll('#pool .analysis-badge').length===2,{timeout:30000});
+    await page.waitForFunction(()=>document.querySelectorAll('#pool .analysis-badge').length===2,null,{timeout:30000});
     await page.waitForFunction(()=>{
       const badges=[...document.querySelectorAll('#pool .analysis-badge')].map(n=>n.textContent||'');
       return badges.length===2 && badges.every(t=>/subject|Large fragments/.test(t));
-    },{timeout:300000});
+    },null,{timeout:300000});
     const badgeText=await page.locator('#pool .analysis-badge').allTextContents();
     record('Per-photo analysis results: '+JSON.stringify(badgeText));
     assert.ok(badgeText.some(x=>/\d+ subjects?/i.test(x)),'No subject mask was extracted from real photographs: '+badgeText.join(' | '));
@@ -72,7 +72,7 @@ try {
   });
   await stage('Partial subjects, re-cut and recompose',async()=>{
     await page.locator('#whole-subjects').uncheck();
-    await page.locator('#cut-size').fill('65');
+    await page.locator('#cut-size').evaluate(el=>{el.value='65';el.dispatchEvent(new Event('input',{bubbles:true}));});
     const oldCut=await page.locator('#cut-seed').inputValue();
     const oldLayout=await page.locator('#layout-seed').inputValue();
     await page.locator('#recut').click();
@@ -91,7 +91,7 @@ try {
     assert.equal(bytes.subarray(1,4).toString(),'PNG','Export must be PNG');
     assert.equal(bytes.readUInt32BE(16),2000,'Expected 2x portrait width');
     assert.equal(bytes.readUInt32BE(20),2800,'Expected 2x portrait height');
-    assert.ok(bytes.includes(Buffer.from('tEXt')),'Expected credited PNG metadata chunk');
+    assert.ok(bytes.includes(Buffer.from('iTXt')),'Expected credited UTF-8 PNG metadata chunk');
     record('Exported '+bytes.length+' byte credited PNG, 2000 × 2800');
     const saveEvent=page.waitForEvent('download',{timeout:45000});
     await page.locator('#save-project').click();
