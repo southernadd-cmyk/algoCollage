@@ -1,0 +1,117 @@
+import assert from 'node:assert/strict';
+import {mkdir, readFile, writeFile} from 'node:fs/promises';
+import {chromium} from 'playwright';
+
+const site=process.env.ALGO_COLLAGE_URL||'https://southernadd-cmyk.github.io/algoCollage/';
+const output=process.env.SMOKE_ARTIFACT_DIR||'smoke-artifacts';
+await mkdir(output,{recursive:true});
+const notes=[];
+const record=(line)=>{const entry=new Date().toISOString()+' '+line;notes.push(entry);console.log(entry);};
+let browser,page;
+async function photo(url,filename) {
+  const response=await fetch(url,{signal:AbortSignal.timeout(45000),headers:{'User-Agent':'AlgoCollage-CI-Smoke/1.0'}});
+  if(!response.ok)throw new Error('Could not download '+filename+': HTTP '+response.status);
+  const buffer=Buffer.from(await response.arrayBuffer());
+  assert.ok(buffer.length>10000,'Photographic test asset is unexpectedly small: '+filename);
+  record('Downloaded real photograph '+filename+' ('+buffer.length+' bytes)');
+  return {name:filename,mimeType:'image/jpeg',buffer};
+}
+async function saveScreenshot(name) {
+  if(page&&!page.isClosed())await page.screenshot({path:output+'/'+name+'.png',fullPage:true,timeout:20000}).catch(error=>record('Screenshot failed: '+error.message));
+}
+async function stage(name,callback) {
+  record('BEGIN '+name);
+  try{const value=await callback();record('PASS '+name);return value;}
+  catch(error){record('FAIL '+name+': '+error.stack);throw error;}
+}
+try {
+  // A real animal photograph and a portrait-style photograph exercise the
+  // recognition pipeline through file uploads without relying on CORS.
+  const dog=await photo('https://picsum.photos/id/1025/650/500','dog.jpg');
+  const person=await photo('https://picsum.photos/id/1005/650/500','person.jpg');
+  browser=await chromium.launch({headless:true,args:['--no-sandbox']});
+  const context=await browser.newContext({acceptDownloads:true,viewport:{width:1440,height:950},deviceScaleFactor:1});
+  page=await context.newPage();
+  page.on('console',msg=>{if(msg.type()==='error')record('BROWSER console error: '+msg.text());});
+  page.on('pageerror',error=>record('BROWSER uncaught exception: '+error.stack));
+  page.on('requestfailed',request=>record('BROWSER request failed '+request.url()+' '+request.failure()?.errorText));
+
+  await stage('Published application loads',async()=>{
+    const response=await page.goto(site,{waitUntil:'domcontentloaded',timeout:60000});
+    assert.ok(response?.ok(),'Site responded with HTTP '+response?.status());
+    await page.locator('#upload-input').waitFor({state:'attached',timeout:20000});
+    await page.waitForFunction(()=>document.querySelector('#cut-style')?.value==='subjects',{timeout:15000});
+    assert.match(await page.title(),/ALGO\/COLLAGE/);
+  });
+  await stage('Photographs upload and trigger subject analysis',async()=>{
+    await page.locator('#upload-input').setInputFiles([dog,person]);
+    await page.waitForFunction(()=>document.querySelectorAll('#pool .analysis-badge').length===2,{timeout:30000});
+    await page.waitForFunction(()=>{
+      const badges=[...document.querySelectorAll('#pool .analysis-badge')].map(n=>n.textContent||'');
+      return badges.length===2 && badges.every(t=>/subject|Large fragments/.test(t));
+    },{timeout:300000});
+    const badgeText=await page.locator('#pool .analysis-badge').allTextContents();
+    record('Per-photo analysis results: '+JSON.stringify(badgeText));
+    assert.ok(badgeText.some(x=>/\d+ subjects?/i.test(x)),'No subject mask was extracted from real photographs: '+badgeText.join(' | '));
+    const status=await page.locator('#cutting-status').innerText();
+    record('Cutting status: '+status);
+    assert.doesNotMatch(status,/unavailable for [12]/i,'One or more recognition workers failed');
+  });
+  await stage('Original subject cuts and Cut map render',async()=>{
+    await page.locator('#view-cuts').click();
+    await page.locator('#canvas-info').waitFor();
+    const text=await page.locator('#canvas-info').innerText();
+    record('Cut map: '+text);
+    assert.match(text,/subject outlines|large fragments/i);
+    await saveScreenshot('cut-map');
+    await page.locator('#view-collage').click();
+    const info=await page.locator('#canvas-info').innerText();
+    record('Collage: '+info);
+    assert.match(info,/pieces/);
+    await saveScreenshot('whole-subjects');
+  });
+  await stage('Partial subjects, re-cut and recompose',async()=>{
+    await page.locator('#whole-subjects').uncheck();
+    await page.locator('#cut-size').fill('65');
+    const oldCut=await page.locator('#cut-seed').inputValue();
+    const oldLayout=await page.locator('#layout-seed').inputValue();
+    await page.locator('#recut').click();
+    assert.notEqual(await page.locator('#cut-seed').inputValue(),oldCut);
+    await page.locator('#recompose').click();
+    assert.notEqual(await page.locator('#layout-seed').inputValue(),oldLayout);
+    await saveScreenshot('partial-subjects');
+  });
+  await stage('PNG export and portable project round trip',async()=>{
+    const exportEvent=page.waitForEvent('download',{timeout:45000});
+    await page.locator('#export').click();
+    const pngDownload=await exportEvent;
+    const pngPath=output+'/collage.png';
+    await pngDownload.saveAs(pngPath);
+    const bytes=await readFile(pngPath);
+    assert.equal(bytes.subarray(1,4).toString(),'PNG','Export must be PNG');
+    assert.equal(bytes.readUInt32BE(16),2000,'Expected 2x portrait width');
+    assert.equal(bytes.readUInt32BE(20),2800,'Expected 2x portrait height');
+    assert.ok(bytes.includes(Buffer.from('tEXt')),'Expected credited PNG metadata chunk');
+    record('Exported '+bytes.length+' byte credited PNG, 2000 × 2800');
+    const saveEvent=page.waitForEvent('download',{timeout:45000});
+    await page.locator('#save-project').click();
+    const projectDownload=await saveEvent,projectPath=output+'/project.json';
+    await projectDownload.saveAs(projectPath);
+    const project=JSON.parse(await readFile(projectPath,'utf8'));
+    assert.equal(project.version,2);
+    assert.equal(project.images.length,2);
+    assert.ok(project.images.some(img=>img.analysis?.subjects?.length),'Portable project lost extracted subjects');
+    record('Saved project with '+project.images.map(i=>i.analysis?.subjects?.length||0).join(', ')+' subject masks');
+    await page.locator('#project-input').setInputFiles({name:'project.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
+    await page.waitForFunction(()=>document.querySelectorAll('#pool .analysis-badge').length===2,{timeout:30000});
+  });
+  record('PASS all live Chrome photo/recognition/cut/export smoke checks');
+  await saveScreenshot('final');
+} catch(error) {
+  process.exitCode=1;
+  record('OVERALL FAILURE: '+error.stack);
+  await saveScreenshot('failure');
+} finally {
+  await writeFile(output+'/smoke-log.txt',notes.join('\n')+'\n');
+  await browser?.close().catch(()=>{});
+}
