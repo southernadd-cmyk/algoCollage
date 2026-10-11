@@ -8,19 +8,19 @@ A browser collage studio built on [ALGO/ART](https://github.com/southernadd-cmyk
 
 ![Algo Collage studio](docs/studio.jpg)
 
-## Subject-aware cutting — 0.2
+## Subject-aware cutting — 0.3
 
-- **Objects & faces** detects common objects and face locations, then traces foreground silhouettes. ALGO/ART territories rank subjects using actual foreground occupancy (not just their rectangular bounds), and partial cuts gravitate toward visible foreground rather than empty holes in a detected outline.
-- **Keep whole subjects** retains the entire detected silhouette. Turn it off to cut larger portions of an object. Partial windows expand around intersecting detected faces.
-- **Source coverage** controls how much material is kept in partial cuts and large image fragments. Default fallback windows retain about 72% of each source's area.
+- **Objects & faces** detects common objects and faces. Faces take priority over broad person detections and use small, Sobel edge-guided contours. Other objects use detector-bounded foreground segmentation; oversized results are discarded. ALGO/ART territories rank the resulting silhouettes by actual foreground occupancy, and partial cuts target visible foreground rather than empty bounding-box space.
+- **Keep whole subjects** retains the *bounded* traced silhouette, not a whole painting. Turn it off to crop part of a subject. Partial windows expand around intersecting faces.
+- **Source coverage** controls partial cuts and explicit large-fragment mode. In Objects & faces, unrecognised images now produce **bounded details of about 21% of the source area** by default; the separate Large image fragments mode still retains about 72%.
 - Images keep their original proportions during cutting. They are no longer cropped to the collage canvas first.
-- If recognition finds no usable subject, **large image fragments** keep the composition working. Choose this method directly for landscapes, textures and photographic blocks.
+- If both recognition models miss an artwork, an edge-density pass tries to select a small focal detail (not a claimed object or face). If that also fails, small ALGO/ART-guided details keep the collage running. Choose **Large image fragments** directly when you want broad landscapes, textures or photographic blocks.
 - In **Cut map**, select a pool image and use **Pick a subject**, then click or tap inside a missed object. Dashed lines show ALGO/ART regions; retained subjects appear against a faded source image.
 - **Original geometric cuts** remains available. Version 1 project files reopen with that cutter so their compositions retain their original settings.
 
-Recognition runs in a worker on your device using **MediaPipe Tasks Vision 1.1.0**, EfficientDet-Lite0, BlazeFace and MagicTouch V2. Faces are located, not identified. Source pictures are not uploaded to a recognition service. The first recognition request downloads roughly 50 MB of runtime and models from the studio's own origin; later requests reuse the worker and browser cache. Analysis and silhouettes are stored with the images and portable projects. Recompose does not rerun recognition.
+Recognition runs in a worker on your device using **MediaPipe Tasks Vision 1.1.0**, EfficientDet-Lite0, BlazeFace, MagicTouch V2 for non-face objects and a JavaScript Sobel edge pass. MagicTouch loads only when object segmentation is needed. Faces are located, not identified. Source pictures are not uploaded to a recognition service. The first recognition request downloads roughly 50 MB of runtime and models from the studio's own origin; later requests reuse the worker and browser cache. Analysis and silhouettes are stored with the images and portable projects. Recompose does not rerun recognition.
 
-This is an experimental cutter: illustrations, tiny faces, overlapping objects, fine hair and backgrounds can confuse the models. A detected box alone is not presented as an extracted object; only a usable foreground mask becomes a subject cut. Picking a subject can help, and large fragments remain available if model loading or inference fails.
+This remains an experimental cutter: painted faces, tiny objects, fine hair and overlapping subjects can defeat recognition, and Sobel contours are approximate rather than semantic segmentation. A broad person detection cannot by itself yield the whole portrait. Old oversized cached masks are invalidated and recalculated when reopening a pool or v2 project. Use **Pick a subject** for missed faces, or switch to Large image fragments for intentionally wide crops.
 
 ## Image pool and composition
 
@@ -63,8 +63,8 @@ API references: [MediaWiki search](https://www.mediawiki.org/wiki/API:Search), [
 
 ## Pipeline and checks
 
-`composition.js` runs the unchanged ALGO/ART V7 engine. `image-cuts.js` maps its regions to each full source image, ranks subjects and defines large or partial windows. `subject-worker.js` performs local detection and point-guided segmentation; `subject-data.js` validates and compresses the masks. `render.js` applies silhouettes and assembles the fragments. `storage.js` persists the pool and validates projects before replacing work; `png.js` embeds source credits.
+`composition.js` runs the unchanged ALGO/ART V7 engine. `image-cuts.js` maps its regions to each full source image, ranks subjects and defines large or partial windows. `subject-worker.js` performs local detection and bounded segmentation; `edge-trace.js` supplies Sobel-guided contours and painterly saliency details; `subject-data.js` validates and compresses the masks. `render.js` applies silhouettes and assembles the fragments. `storage.js` persists the pool and validates projects before replacing work; `png.js` embeds source credits.
 
 The five engine files in `vendor/algoart/` are **unchanged**, pinned to renderer **V7**, commit [`d231259`](https://github.com/southernadd-cmyk/algoart/commit/d231259ad08a690c1109a6af7f624c769c50eadc). `upstream.json` records their blob hashes. The marker font comes from the same author's project.
 
-`npm test` checks all engine families and formats, separate seed effects, excluded images, licence filters, PNG credits, silhouette round trips and corruption rejection, foreground selection, enlarged regions, subject ranking, whole/partial cuts, face protection and backward-compatible projects. Browser validation is recorded in [DEVELOPMENT.md](DEVELOPMENT.md).
+`npm test` checks all engine families and formats, separate seed effects, excluded images, licence filters, PNG credits, silhouette round trips and corruption rejection, foreground selection, subject ranking, whole/partial cuts, face protection, portrait-sized contour limits and backward-compatible projects. Browser validation is recorded in [DEVELOPMENT.md](DEVELOPMENT.md).
