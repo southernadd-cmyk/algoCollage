@@ -80,6 +80,19 @@ test('ALGO/ART regions choose visible foreground rather than misleading bounding
   assert.deepEqual(rankedSubjects([b,a],[{...territory,x:.07}]).map(entry=>entry.subject.id),['left','right']);
 });
 
+test('different ALGO/ART polygons with identical bounds select different subjects',()=>{
+  const w=32,h=32,left=new Uint8Array(w*h),right=new Uint8Array(w*h);
+  for(let y=8;y<24;y++)for(let x=0;x<8;x++)left[y*w+x]=1;
+  for(let y=8;y<24;y++)for(let x=24;x<32;x++)right[y*w+x]=1;
+  const common={label:'Subject',score:1,manual:false,bounds:{x:0,y:0,w:1,h:1}};
+  const a={...common,id:'left',mask:encodeMask(left,w,h)};
+  const b={...common,id:'right',mask:encodeMask(right,w,h)};
+  const topLeft={index:0,x:0,y:0,w:1,h:1,points:[{x:0,y:0},{x:1,y:0},{x:0,y:1}]};
+  const bottomRight={index:1,x:0,y:0,w:1,h:1,points:[{x:1,y:1},{x:1,y:0},{x:0,y:1}]};
+  assert.equal(rankedSubjects([b,a],[topLeft])[0].subject.id,'left');
+  assert.equal(rankedSubjects([a,b],[bottomRight])[0].subject.id,'right');
+});
+
 test('partial cuts follow a nearby real silhouette instead of an empty guide hole',()=>{
   const w=32,h=32,pixels=new Uint8Array(w*h);
   // An L-shaped silhouette touches the left edge and bottom. Its top-right
