@@ -1,3 +1,11 @@
+## Freehand scissors — hand-cut collage scraps
+
+**Cutting Room → Cutting method → ✂ Freehand scissors.** Choose a source photograph and press-and-drag with a mouse, stylus or finger around the piece to keep. Releasing automatically joins the ends into a closed paper-cut outline; a live dashed closing edge shows the shape as it is drawn. Each acceptable new shape becomes a cutout candidate and is automatically selected in the transfer tray when there is room. Use **Undo last cut** or **Clear drawn cuts** for the current source. Tiny taps and unclosed strokes with essentially zero area are rejected.
+
+These are *real source-image cut paths*, not decorative strokes or masks placed over a different photo. Hand-drawn cutouts preserve the original image proportions, keep their outline when transferred, and can be rearranged by the ALGO/ART assembly baselines without being re-cut. The option is isolated to the editable Cutting Room, not the Assembly Board or archived layer viewer. Other cutting methods are unchanged. Switching methods does not remove the hand-drawn shapes; they are saved per photograph and can be reused later.
+
+Normalized, simplified path coordinates (at most 240 points per cut and 24 cuts per photograph) are stored in browser IndexedDB and portable v4 projects. Imported paths are validated before restoring, and cutout snapshots remain intact on transferred or locked layers. No AI model or network request is required to draw by hand. Unit tests check path geometry, limits, saved projects, source dimensions and the cut/transfer boundary; the live Chrome smoke includes mouse drawing, undo, transfer, export and restoration.
+
 ## Cutting method clarity and strict stage separation — 0.6
 
 **Cutting controls live exclusively in the Cutting Room modal.** The material sidebar contains only search, upload and a shortcut to the cutting workspace. Board-specific settings (layout seed, baseline family, maximum pieces, quiet space, rotation, piece scale, canvas, paper, shadows and monochrome) now appear below the **Assembly Board**, beside the actual composition. The board's tabs only switch between Collage and Layout map; returning to the Cutting Room is a separate navigation action, not a third board view.
