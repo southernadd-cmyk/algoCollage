@@ -145,3 +145,61 @@
   .layer-item.active>span:last-child{grid-column:1;grid-row:2}
 }
 @media(prefers-reduced-motion:reduce){.cutout-card,.cut-source{transition:none!important}}
+
+
+/* Only the Cutting Room contains scissor controls. Arrangement settings
+   physically sit beneath the Assembly Board, not in the material sidebar. */
+.source-cut-room-link{
+  display:block;margin:11px 0 19px;width:100%;
+  padding:14px 12px;color:#282d22;background:#e2e7ab;
+  border:2px dashed #494e39;box-shadow:3px 4px 0 #adac87;
+  font:700 12px 'Courier New',monospace;text-align:center;
+  transform:rotate(-1deg);text-decoration:none;
+}
+.source-cut-room-link:hover:not(:disabled){background:#f0f4c7;transform:rotate(0)}
+.assembly-settings{
+  margin:18px 0 2px;padding:19px 20px 20px;
+  background:#e6dac0;color:#2a2c26;border:1px solid #b7aa8e;
+  box-shadow:4px 5px 0 #0e130d49;position:relative;
+}
+.assembly-settings::before{
+  content:"";position:absolute;top:-9px;right:12%;width:91px;height:22px;
+  background:#e5d5a3ce;transform:rotate(4deg);pointer-events:none;
+}
+.assembly-settings .eyebrow{color:#9d4932;letter-spacing:.12em;font-size:10px}
+.assembly-settings-head{display:flex;align-items:baseline;justify-content:space-between;gap:15px;margin:8px 0 18px}
+.assembly-settings-head h3{font:clamp(26px,3vw,35px)/1 var(--marker);margin:0}
+.assembly-settings-head p{font:11px/1.65 'Courier New',monospace;max-width:330px;margin:0;color:#575448}
+.assembly-guide-fields{display:grid;grid-template-columns:minmax(110px,1fr) minmax(160px,1fr);gap:12px;align-items:end}
+.assembly-guide-fields .baseline-kind{margin:5px 0 0;padding:12px}
+.assembly-guide-fields .seed-row{margin:0;display:flex;flex-direction:column}
+.assembly-guide-fields .seed-row input{width:100%;min-height:42px;background:#f7efdd}
+.assembly-settings #baseline-note{border-left:3px solid #c54a34;padding:5px 10px;margin:17px 0 15px}
+.assembly-settings details{border-top:1px dashed #aa9e85;padding:14px 0 0}
+.assembly-settings details summary{font:700 12px 'Courier New',monospace;cursor:pointer;text-transform:uppercase;margin-bottom:8px}
+.assembly-settings details .range-field{margin:15px 0}
+.assembly-settings details .range-field label{display:flex;justify-content:space-between}
+.assembly-settings details .paired{margin:12px 0}
+.assembly-settings details select{background:#f8f1e2}
+.cut-room-tools .method-explanation{
+  background:#f4ebd4;border-left:4px solid #c64a32;margin:11px 0 17px;
+  font:11px/1.58 'Courier New',monospace;padding:11px 10px;color:#343a30;
+}
+.cut-room-tools #cut-geometry-options.inactive-method{opacity:.48}
+.cut-room-tools #cut-geometry-options.inactive-method select{cursor:not-allowed}
+.cut-room-tools input:disabled,.cut-room-tools select:disabled,.cut-room-tools button:disabled{opacity:.52}
+.cut-room-tools #whole-subjects:disabled{cursor:not-allowed}
+.cut-room-tray .reset-cut-tray{
+  display:block;width:100%;margin:0 0 12px;background:#f4e2d1;
+  border:1px dashed #b36f56;padding:8px 10px;
+  font:700 10px 'Courier New',monospace;color:#7f3c2c;
+}
+.cut-room-tray .reset-cut-tray:hover:not(:disabled){background:#ffe6d5}
+.cut-room-tray .reset-cut-tray:disabled{opacity:.35}
+@media(max-width:740px){
+  .assembly-settings{padding:15px 13px}
+  .assembly-settings-head{display:block}
+  .assembly-settings-head p{margin:8px 0 0}
+  .assembly-guide-fields{grid-template-columns:1fr}
+  .cut-room-tools .method-explanation{grid-column:1/-1}
+}

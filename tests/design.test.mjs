@@ -8,12 +8,20 @@ const tags=[...html.matchAll(/<\/?([a-z][a-z0-9-]*)\b[^>]*>/gi)];
 const voids=new Set(['input','img','hr','br','source','meta','link','wbr']);
 test('redesigned collage studio keeps all original actions and unique IDs',()=>{
   assert.equal(new Set(ids).size,ids.length,'duplicate HTML IDs');
-  for(const id of ['artwork','canvas-panel','view-collage','view-cuts','view-layout','export','credits-button',
+  for(const id of ['artwork','canvas-panel','view-collage','view-layout','export','credits-button',
     'new-baseline','lock-layer','shuffle-images','cut-mode','cut-style','cut-seed','layout-seed',
     'layer-list','layout-guide-name','layout-guide-meta','find-subjects','pick-subject',
     'search-form','query','provider','upload-input','pool','save-project','open-project'])
     assert.ok(ids.includes(id),'Missing action '+id);
   assert.match(html,/id="workbench"/);
+  const cuttingRoom=html.slice(html.indexOf('<dialog id="cut-room"'));
+  const board=html.slice(0,html.indexOf('<dialog id="cut-room"'));
+  for(const id of ['cut-style','cut-mode','cut-size','whole-subjects','cut-seed','recut','detail','pick-subject']){
+    assert.ok(cuttingRoom.includes('id="'+id+'"'),'Cutting Room missing '+id);
+    assert.ok(!board.includes('id="'+id+'"'),'Cutting control '+id+' leaked onto Assembly Board');
+  }
+  assert.ok(board.includes('class="assembly-settings"'),'Assembly settings must stay with the board');
+  assert.ok(!board.includes('id="view-cuts"'),'Cutting Room must not occupy an Assembly Board tab');
   assert.match(html,/class="jump-to-desk" href="#workbench"/);
   assert.equal((html.match(/id="new-baseline"/g)||[]).length,1);
   assert.equal((html.match(/id="lock-layer"/g)||[]).length,1);

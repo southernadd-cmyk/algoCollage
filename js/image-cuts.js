@@ -117,6 +117,32 @@ function bevel(b,amount) {
   return [{x:b.x+d,y:b.y},{x:b.x+b.w-d,y:b.y},{x:b.x+b.w,y:b.y+d},{x:b.x+b.w,y:b.y+b.h-d},
     {x:b.x+b.w-d,y:b.y+b.h},{x:b.x+d,y:b.y+b.h},{x:b.x,y:b.y+b.h-d},{x:b.x,y:b.y+d}];
 }
+// Guide-influenced face and object *details* are consciously distinct from
+// a whole recognised silhouette. Recognition locates the form; the cut
+// geometry selects which portion of that form to retain.
+function subjectDetails(subject,regions,settings,width,height,key) {
+  const box=subject.bounds;
+  const labels=['upper left','upper right','lower detail'];
+  const anchors=[{x:.26,y:.29},{x:.74,y:.29},{x:.50,y:.75}];
+  const coverage=.37+settings.cutSize/850; // .41-.49 of detected object at usual values
+  return anchors.map((anchor,index)=>{
+    const guide=regions[(index*3)%Math.max(1,regions.length)]||{x:.5,y:.5,w:0,h:0};
+    // A small, deterministic ALGO/ART positional influence makes recutting
+    // meaningful without accidentally escaping a tightly detected face.
+    const gx=guide.x+guide.w/2,gy=guide.y+guide.h/2;
+    const px=clamp(anchor.x+(gx-.5)*.12,.16,.84);
+    const py=clamp(anchor.y+(gy-.5)*.12,.16,.84);
+    const w=box.w*coverage,h=box.h*coverage;
+    const normal={x:clamp(box.x+box.w*(px-coverage/2),box.x,box.x+box.w-w),
+      y:clamp(box.y+box.h*(py-coverage/2),box.y,box.y+box.h-h),w,h};
+    const bounds=toPixels(normal,width,height);
+    return {index,id:key+':'+subject.id+':detail-'+index,
+      points:rectangle(bounds),bounds,alpha:subject.mask,
+      sourceWidth:width,sourceHeight:height,kind:'subject',
+      label:subject.label+' · '+labels[index],subjectId:subject.id,guideIndex:guide.index};
+  });
+}
+
 export function makeImageCuts(cuts,settings,image) {
   const width=image.element?.naturalWidth||image.width||cuts.width;
   const height=image.element?.naturalHeight||image.height||cuts.height;
@@ -124,24 +150,41 @@ export function makeImageCuts(cuts,settings,image) {
   const subjects=settings.cutStyle==='subjects'?image.analysis?.subjects||[]:[];
   const key=[settings.cutSeed,settings.cutMode,settings.detail,settings.cutStyle,settings.cutSize,settings.wholeSubjects,width,height].join(':');
   if(subjects.length) {
-    const masks=rankedSubjects(subjects,regions).map(({subject,region},index)=>{
-      const normal=settings.wholeSubjects?subject.bounds:partialSubjectBounds(subject,region,settings.cutSize,image.analysis.faces);
-      const bounds=toPixels(normal,width,height);
+    const ranked=rankedSubjects(subjects,regions);
+    if(!settings.wholeSubjects){
+      return {width,height,
+        masks:ranked.flatMap(({subject})=>subjectDetails(subject,regions,settings,width,height,key))
+          .map((mask,index)=>({...mask,index})),
+        regions,kind:'subjects'};
+    }
+    const masks=ranked.map(({subject,region},index)=>{
+      const bounds=toPixels(subject.bounds,width,height);
       return {index,id:key+':'+subject.id,points:rectangle(bounds),bounds,alpha:subject.mask,
-        sourceWidth:width,sourceHeight:height,kind:'subject',label:subject.label,subjectId:subject.id,guideIndex:region.index};
+        sourceWidth:width,sourceHeight:height,kind:'subject',label:subject.label,
+        subjectId:subject.id,guideIndex:region.index};
     });
     return {width,height,masks,regions,kind:'subjects'};
   }
-  // Do not disguise a missed detection as a whole-subject extraction.
-  // In subject mode the fallback is a bounded detail (about 21% of the
-  // photograph at the default setting); explicit Regions retains wide crops.
+  // A missed subject gets compact, explicitly labelled details. Large
+  // fragments are a distinct method: bigger *photographic regions*, not
+  // the same recognised face displayed under another dropdown option.
   const bounded=settings.cutStyle==='subjects';
-  const coverage=bounded?.26+settings.cutSize/400:.45+settings.cutSize/200;
-  const largest=regions.slice().sort((a,b)=>b.w*b.h-a.w*a.h).slice(0,8);
-  const masks=largest.map((region,index)=>{
+  const coverage=bounded?.26+settings.cutSize/400:.31+settings.cutSize/290;
+  const ranked=regions.slice().sort((a,b)=>b.w*b.h-a.w*a.h);
+  const chosen=[];
+  for(const region of ranked){
+    const cx=region.x+region.w/2,cy=region.y+region.h/2;
+    if(chosen.every(previous=>Math.hypot(cx-(previous.x+previous.w/2),cy-(previous.y+previous.h/2))>.075))
+      chosen.push(region);
+    if(chosen.length===8)break;
+  }
+  if(!chosen.length&&ranked.length)chosen.push(ranked[0]);
+  const masks=chosen.map((region,index)=>{
     const bounds=toPixels(windowIn({x:0,y:0,w:1,h:1},region,coverage),width,height);
-    return {index,id:key+':region-'+region.index,bounds,points:settings.cutMode==='rects'?rectangle(bounds):bevel(bounds,.06),
-      sourceWidth:width,sourceHeight:height,kind:'region',label:bounded?'Unrecognised image detail':'Large image fragment',guideIndex:region.index};
+    return {index,id:key+':region-'+region.index,bounds,
+      points:settings.cutMode==='rects'?rectangle(bounds):bevel(bounds,.06),
+      sourceWidth:width,sourceHeight:height,kind:'region',
+      label:bounded?'Unrecognised image detail':'Photo fragment '+(index+1),guideIndex:region.index};
   });
   return {width,height,masks,regions,kind:bounded?'details':'regions'};
 }
