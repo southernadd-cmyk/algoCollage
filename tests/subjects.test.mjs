@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {encodeMask,decodeMask,subjectFromConfidence,validateAnalysis,ANALYSIS_VERSION,ANALYSIS_MODEL,foregroundComponent} from '../js/subject-data.js';
 import {makeImageCuts,rankedSubjects,partialSubjectBounds} from '../js/image-cuts.js';
-import {chooseCandidates,sobelEdges,traceEdgeMask} from '../js/edge-trace.js';
+import {chooseCandidates,sobelEdges,traceEdgeMask,salientDetails} from '../js/edge-trace.js';
 import {DEFAULTS,ENGINE_COMMIT} from '../js/composition.js';
 import {validateProject,projectDocument} from '../js/storage.js';
 
@@ -164,4 +164,21 @@ test('oversensitive painterly foreground and stale cached masks cannot survive a
   assert.equal(validateAnalysis(oldMask),undefined,'old saved segmentation is deliberately recalculated');
   const oldProject={app:'ALGO/COLLAGE',version:2,engineCommit:ENGINE_COMMIT,settings:DEFAULTS,images:[{id:'old',data:'data:image/png;base64,aGVsbG8=',analysis:oldMask}]};
   assert.equal(validateProject(oldProject).images[0].analysis,undefined,'legacy projects still open');
+});
+
+test('an undetected painterly feature yields a compact edge-selected detail',()=>{
+  const w=120,h=160,rgba=new Uint8ClampedArray(w*h*4);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const i=(y*w+x)*4;
+    const textured=x>=42&&x<73&&y>=34&&y<77;
+    const intensity=textured?((x+y)%5<2?40:205):170;
+    rgba[i]=rgba[i+1]=rgba[i+2]=intensity;rgba[i+3]=255;
+  }
+  const edges=sobelEdges(rgba,w,h),details=salientDetails(edges,w,h);
+  assert.equal(details.length,1);
+  assert.equal(details[0].kind,'detail');
+  assert.ok(details[0].bounds.x>.15&&details[0].bounds.x<.75);
+  assert.ok(details[0].bounds.y<.6);
+  assert.ok(details[0].bounds.w*details[0].bounds.h<.08);
+  assert.deepEqual(salientDetails(new Float32Array(w*h),w,h),[]);
 });
