@@ -654,6 +654,101 @@ $('cut-workspace-canvas').addEventListener('click',event=>{
   picking=false;$('pick-subject').setAttribute('aria-pressed','false');$('pick-help').textContent='Tracing the selected subject…';
   renderCutRoom();void analyseImage(image,point);
 });
+// Pointer events keep freehand cutting equally usable with mouse, stylus and
+// finger. The transparent canvas sits over the source only in scissors mode.
+function paintFreehandStroke() {
+  const overlay=$('freehand-overlay'),ctx=overlay.getContext('2d');
+  if(!ctx)return;
+  ctx.clearRect(0,0,overlay.width,overlay.height);
+  if(!drawingStroke?.points?.length)return;
+  const points=drawingStroke.points,w=overlay.width,h=overlay.height;
+  ctx.save();ctx.lineCap='round';ctx.lineJoin='round';
+  const trace=()=>{
+    ctx.beginPath();points.forEach((p,i)=>ctx[i?'lineTo':'moveTo'](p.x*w,p.y*h));
+  };
+  trace();ctx.lineWidth=5;ctx.strokeStyle='#fff8e2';ctx.stroke();
+  trace();ctx.lineWidth=2.8;ctx.strokeStyle='#b63d2c';ctx.stroke();
+  if(points.length>2){
+    ctx.beginPath();ctx.moveTo(points.at(-1).x*w,points.at(-1).y*h);
+    ctx.lineTo(points[0].x*w,points[0].y*h);
+    ctx.setLineDash([7,6]);ctx.stroke();ctx.setLineDash([]);
+  }
+  ctx.beginPath();ctx.arc(points[0].x*w,points[0].y*h,5,0,Math.PI*2);
+  ctx.fillStyle='#dc5135';ctx.fill();ctx.strokeStyle='#fff8e2';ctx.lineWidth=2;ctx.stroke();
+  ctx.restore();
+}
+function handPoint(event){
+  const rect=$('freehand-overlay').getBoundingClientRect();
+  return {x:Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),
+    y:Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height))};
+}
+function editingHandCuts(){
+  return $('cut-room').open&&!archivedCutLayer&&settings.cutStyle==='manual'&&
+    images.find(i=>i.id===previewImageId);
+}
+const handSurface=$('freehand-overlay');
+handSurface.addEventListener('pointerdown',event=>{
+  const image=editingHandCuts();
+  if(!image||drawingStroke||(event.pointerType==='mouse'&&event.button!==0))return;
+  event.preventDefault();
+  drawingStroke={pointerId:event.pointerId,imageId:image.id,points:[handPoint(event)]};
+  handSurface.setPointerCapture(event.pointerId);
+  paintFreehandStroke();
+});
+handSurface.addEventListener('pointermove',event=>{
+  if(!drawingStroke||drawingStroke.pointerId!==event.pointerId)return;
+  event.preventDefault();
+  const point=handPoint(event),points=drawingStroke.points;
+  if(points.length<6000&&Math.hypot(point.x-points.at(-1).x,point.y-points.at(-1).y)>.002){
+    points.push(point);paintFreehandStroke();
+  }
+});
+handSurface.addEventListener('pointerup',event=>{
+  if(!drawingStroke||drawingStroke.pointerId!==event.pointerId)return;
+  event.preventDefault();
+  const stroke=drawingStroke;drawingStroke=null;
+  if(handSurface.hasPointerCapture(event.pointerId))handSurface.releasePointerCapture(event.pointerId);
+  const image=editingHandCuts();
+  if(!image||image.id!==stroke.imageId){paintFreehandStroke();return;}
+  stroke.points.push(handPoint(event));
+  const outline=freehandOutline(stroke.points);
+  if(!outline){
+    paintFreehandStroke();notice('Trace a larger, closed area. Small taps or lines cannot become paper cutouts.',true);return;
+  }
+  try {
+    const previous=validateHandCuts(image.handCuts);
+    if(previous.length>=MAX_HAND_CUTS)throw new Error('Each photo supports up to '+MAX_HAND_CUTS+' hand cuts. Undo one before drawing another.');
+    const cut={id:crypto.randomUUID(),points:outline};
+    image.handCuts=[...previous,cut];
+    const mask=handMasksForImage(image).masks.at(-1),piece=cutoutFromMask(image,mask,cuts);
+    const canStage=stagedCutouts.length<MAX_CUTOUTS&&stagedCutouts.length<settings.pieces;
+    if(canStage)stagedCutouts.push(piece);
+    cutNotice=canStage?'Hand-drawn cut added to your transfer tray.':'Hand-drawn cut saved. Select it in the cutout cards to add it to your tray.';
+    poolChanged();
+  }catch(error){paintFreehandStroke();notice('Could not save that outline: '+error.message,true);}
+});
+for(const type of ['pointercancel','lostpointercapture'])
+  handSurface.addEventListener(type,event=>{
+    if(drawingStroke?.pointerId===event.pointerId){drawingStroke=null;paintFreehandStroke();}
+  });
+function removeHandCuts(removeAll=false){
+  const image=editingHandCuts();
+  if(!image)return;
+  const existing=validateHandCuts(image.handCuts);
+  if(!existing.length)return;
+  if(removeAll&&!window.confirm('Discard all '+existing.length+' hand-drawn cut'+(existing.length===1?'':'s')+' for this photograph? Pieces already transferred to the board will remain unchanged.'))return;
+  const discarded=removeAll?existing:[existing.at(-1)];
+  const ids=new Set(discarded.map(c=>'hand:'+c.id));
+  image.handCuts=removeAll?[]:existing.slice(0,-1);
+  stagedCutouts=stagedCutouts.filter(item=>item.imageId!==image.id||!ids.has(item.mask.id));
+  drawingStroke=null;
+  cutNotice=removeAll?'Hand-drawn cuts cleared from this photo. Transferred board pieces are unchanged.':
+    'Last hand-drawn cut removed. Transferred board pieces are unchanged.';
+  poolChanged();
+}
+$('undo-hand-cut').addEventListener('click',()=>removeHandCuts(false));
+$('clear-hand-cuts').addEventListener('click',()=>removeHandCuts(true));
+
 let dragCount=0;
 document.addEventListener('dragover',event=>{if(event.dataTransfer.types.includes('Files')){event.preventDefault();event.dataTransfer.dropEffect='copy';}});
 document.addEventListener('dragenter',event=>{if(event.dataTransfer.types.includes('Files')){dragCount++;document.body.classList.add('dragging');}});
