@@ -31,3 +31,11 @@ The [launch screenshot](docs/studio.jpg) shows the live square composition and i
 ## Provider limitation
 
 Live Commons search, raster downloads, rendering and export work from the deployed site. **Openverse could not be reached** from the validation browser; the application displayed its source-unavailable message without losing the pool. Its endpoint and parsing are covered against controlled responses and official API documentation, but its live search and image downloads remain unverified. Commons is the default provider, and uploads offer another working source of material.
+
+## Subject cutter 0.2
+
+The unchanged ALGO/ART guide geometry now supplies image-space selection regions. MediaPipe object and face detection proposes points; MagicTouch V2 supplies foreground masks. Masks are compressed and retained with the pool, so changing assembly does not repeat inference. Unrecognised or unavailable subjects use larger source-space fragments. A per-image inspector supports manual point selection.
+
+The 13 automated checks pass, including mask corruption rejection, connected foreground selection, large fragment coverage, guide-based subject ranking, whole silhouettes, partial cuts around faces, and v1/v2 project compatibility. All application JavaScript parses and the HTML IDs, label targets and linked assets validate. The local static build verifies all three downloaded model hashes.
+
+Live recognition and export checks for this revision are pending deployment.

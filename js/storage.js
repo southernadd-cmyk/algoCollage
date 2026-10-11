@@ -1,5 +1,6 @@
 import { sanitiseSettings, COLLAGE_VERSION, ENGINE_COMMIT } from './composition.js';
 import { MAX_IMAGES, MAX_PROJECT_BYTES, MAX_IMAGE_BYTES, RASTER_TYPES, safeURL, plainText } from './sources.js';
+import {validateAnalysis} from './subject-data.js';
 
 function database() {
   return new Promise((resolve,reject) => {
@@ -41,7 +42,7 @@ export async function projectDocument(settings, images) {
 }
 
 export function validateProject(project) {
-  if (!project || project.app !== 'ALGO/COLLAGE' || project.version !== COLLAGE_VERSION || project.engineCommit !== ENGINE_COMMIT) {
+  if (!project || project.app !== 'ALGO/COLLAGE' || ![1,COLLAGE_VERSION].includes(project.version) || project.engineCommit !== ENGINE_COMMIT) {
     throw new Error('This project needs a different version of Algo Collage.');
   }
   if (!Array.isArray(project.images) || project.images.length > MAX_IMAGES) throw new Error('A project can contain up to 24 images.');
@@ -55,7 +56,10 @@ export function validateProject(project) {
     if (total>MAX_PROJECT_BYTES) throw new Error('This project is too large.');
     return {id:image.id, title:plainText(image.title || 'Untitled image'), creator:plainText(image.creator),
       license:plainText(image.license || 'User supplied'), sourceUrl:safeURL(image.sourceUrl), licenseUrl:safeURL(image.licenseUrl),
-      provider:plainText(image.provider || 'Upload'), query:plainText(image.query), enabled:image.enabled!==false, data:image.data};
+      provider:plainText(image.provider || 'Upload'), query:plainText(image.query), enabled:image.enabled!==false, data:image.data,
+      analysis:validateAnalysis(image.analysis)};
   });
-  return {settings:sanitiseSettings(project.settings), images};
+  // Keep the original cutter when reopening an old project, so its pixels do not change.
+  const input=project.version===1?{...project.settings,cutStyle:'geometric'}:project.settings;
+  return {settings:sanitiseSettings(input), images};
 }

@@ -23,6 +23,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+      - run: npm ci
       - name: Check the collage engine and exports
         run: npm test
       - name: Check JavaScript syntax
@@ -33,10 +35,7 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Stage the static application
-        run: |
-          mkdir -p _site
-          cp index.html favicon.svg .nojekyll _site/
-          cp -R css js fonts vendor _site/
+        run: npm run build
       - name: Upload the site
         uses: actions/upload-pages-artifact@v4
         with:

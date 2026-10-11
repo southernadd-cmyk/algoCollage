@@ -40,25 +40,34 @@
     </section>
     <section class="composition-section">
       <div class="section-heading"><span class="step">02</span><h2>Cut &amp; compose.</h2></div>
-      <p class="intro">Two independent outputs from ALGO/ART. One makes the pieces. One places them.</p>
-      <div class="paired engine-choices"><div><label for="cut-mode">Cut shapes</label><select id="cut-mode"><option value="geometric">Constructed forms</option><option value="rects">Recursive divisions</option><option value="field">Orbital shapes</option></select></div><div><label for="layout-mode">Assembly layout</label><select id="layout-mode"><option value="field">Orbital studies</option><option value="geometric">Constructed forms</option><option value="rects">Recursive divisions</option></select></div></div>
+      <p class="intro">ALGO/ART chooses the regions. Subjects supply the outlines. A second output assembles the pieces.</p>
+      <label for="cut-style">Cutting method</label><select id="cut-style"><option value="subjects">Objects &amp; faces</option><option value="regions">Large image fragments</option><option value="geometric">Original geometric cuts</option></select>
+      <div class="cut-options">
+        <div class="range-field"><label for="cut-size">Source coverage <output id="cutSize-value" for="cut-size">80</output></label><input id="cut-size" type="range" min="35" max="100" value="80"></div>
+        <label class="subject-check"><input id="whole-subjects" type="checkbox" checked> Keep whole subjects</label>
+        <p id="cutting-status" class="small-note" role="status">Add images to find their subjects. Large fragments appear first.</p>
+        <button id="find-subjects" class="wide" disabled>Find subjects again ↻</button>
+        <p class="small-note">Recognition runs on your device. If it misses an object, select it in the Cut map.</p>
+      </div>
+      <div class="paired engine-choices"><div><label for="cut-mode">Selection regions</label><select id="cut-mode"><option value="geometric">Constructed forms</option><option value="rects">Recursive divisions</option><option value="field">Orbital shapes</option></select></div><div><label for="layout-mode">Assembly layout</label><select id="layout-mode"><option value="field">Orbital studies</option><option value="geometric">Constructed forms</option><option value="rects">Recursive divisions</option></select></div></div>
       <div class="seed-row"><label for="cut-seed">Cut seed</label><input id="cut-seed" maxlength="80"><button id="recut" title="Make new cuts; keep the assembly seed">Re-cut ↻</button></div>
       <div class="seed-row"><label for="layout-seed">Layout seed</label><input id="layout-seed" maxlength="80"><button id="recompose" title="Move the same fragments into a new layout">Recompose ↻</button></div>
       <button id="shuffle-images" class="wide">Shuffle images ⇄</button>
       <details open><summary>Composition &amp; paper <span>＋</span></summary>
-        <div class="range-field"><label for="pieces">Maximum pieces <output id="pieces-value" for="pieces">18</output></label><input id="pieces" type="range" min="6" max="48" value="18"></div>
-        <div class="range-field"><label for="detail">Cut detail <output id="detail-value" for="detail">30</output></label><input id="detail" type="range" min="8" max="60" value="30"></div>
-        <div class="range-field"><label for="negative-space">Quiet space <output id="negativeSpace-value" for="negative-space">55</output></label><input id="negative-space" type="range" min="0" max="90" value="55"></div>
-        <div class="range-field"><label for="scale">Piece scale <output id="scale-value" for="scale">165</output></label><input id="scale" type="range" min="60" max="230" value="165"></div>
+        <div class="range-field"><label for="pieces">Maximum pieces <output id="pieces-value" for="pieces">12</output></label><input id="pieces" type="range" min="6" max="48" value="12"></div>
+        <div class="range-field"><label for="detail">Region detail <output id="detail-value" for="detail">18</output></label><input id="detail" type="range" min="8" max="60" value="18"></div>
+        <div class="range-field"><label for="negative-space">Quiet space <output id="negativeSpace-value" for="negative-space">35</output></label><input id="negative-space" type="range" min="0" max="90" value="35"></div>
+        <div class="range-field"><label for="scale">Piece scale <output id="scale-value" for="scale">185</output></label><input id="scale" type="range" min="60" max="230" value="185"></div>
         <div class="range-field"><label for="rotation">Rotation <output id="rotation-value" for="rotation">14</output></label><input id="rotation" type="range" min="0" max="60" value="14"></div>
         <div class="paired"><div><label for="orientation">Canvas</label><select id="orientation"><option value="portrait">Portrait · 1000 × 1400</option><option value="landscape">Landscape · 1400 × 1000</option><option value="square">Square · 1200 × 1200</option></select></div><div><label for="paper">Paper</label><select id="paper"><option value="#f4f0e5">Warm white</option><option value="#ffffff">White</option><option value="#e2d8c1">Buff</option><option value="#252924">Charcoal</option></select></div></div>
         <div class="check-row"><label><input type="checkbox" id="shadow" checked> Paper shadows</label><label><input type="checkbox" id="monochrome"> Monochrome</label></div>
       </details>
     </section>
-    <details class="about"><summary>About this experiment <span>＋</span></summary><p>How far can the golden ratio govern a collage while its fragments remain unexpected?</p><p>The composition engine comes from <a href="https://southernadd-cmyk.github.io/algoart/" target="_blank" rel="noopener noreferrer">ALGO/ART ↗</a>. Images are cropped geometrically: this version does not isolate subjects from their backgrounds.</p><p>Your pool is saved in this browser. Save a project to keep the images and seeds together in a portable file.</p></details>
+    <details class="about"><summary>About this experiment <span>＋</span></summary><p>How far can the golden ratio govern a collage while its fragments remain unexpected?</p><p>The composition engine comes from <a href="https://southernadd-cmyk.github.io/algoart/" target="_blank" rel="noopener noreferrer">ALGO/ART ↗</a>. Its territories select subjects and large image regions. Another output supplies placement.</p><p>Objects &amp; faces uses local detection and foreground tracing. Recognition can miss subjects or include some background. Large fragments keep the composition working; the Cut map lets you select a missed subject.</p><p>Your pool and outlines are saved in this browser. Save a project to keep the images, outlines and seeds together in a portable file.</p></details>
   </aside>
   <section class="workspace" aria-label="Canvas and image pool">
     <div class="canvas-bar"><div class="view-tabs" role="tablist" aria-label="Canvas view"><button id="view-collage" role="tab" aria-selected="true" aria-controls="canvas-panel" data-view="collage">Collage</button><button id="view-cuts" role="tab" aria-selected="false" tabindex="-1" aria-controls="canvas-panel" data-view="cuts">Cut map</button><button id="view-layout" role="tab" aria-selected="false" tabindex="-1" aria-controls="canvas-panel" data-view="layout">Layout map</button></div><button id="export" class="export-button" disabled>Export PNG ↓</button></div>
+    <div id="cut-inspector" class="cut-inspector" hidden><label for="cut-preview-image">Inspect image</label><select id="cut-preview-image"></select><button id="pick-subject" aria-pressed="false">Pick a subject</button><p id="pick-help" class="small-note">Dashed lines are ALGO/ART regions. Bright areas are the pieces retained.</p></div>
     <div id="canvas-panel" class="canvas-panel" role="tabpanel" aria-labelledby="view-collage">
       <div class="paper-wrap"><canvas id="artwork" width="1000" height="1400" role="img" aria-label="Collage canvas"></canvas><div id="empty-canvas" class="empty-canvas"><span class="empty-symbol" aria-hidden="true">φ</span><h2>The composition is ready.<br>Bring the images.</h2><p>Search for a subject or upload your own pictures.<br>Keep a few in the pool to make your first collage.</p><button id="empty-upload">＋ Add images</button></div></div>
     </div>
@@ -69,7 +78,7 @@
       <div id="pool" class="pool"><div class="pool-placeholder"><span>＋</span><p>Your material lives here.<br>Search results join the pool when you choose <strong>Add</strong>.</p></div></div>
       <p id="storage-status" class="small-note" role="status"></p>
     </section>
-    <footer class="studio-footer"><span>MATHEMATICS SETS THE LAYOUT. YOU CHOOSE THE MATERIAL.</span><span>ALPHA 0.1</span></footer>
+    <footer class="studio-footer"><span>MATHEMATICS SETS THE LAYOUT. YOU CHOOSE THE MATERIAL.</span><span>ALPHA 0.2 · SUBJECT CUTS</span></footer>
   </section>
 </main>
 <input id="upload-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" multiple hidden>
