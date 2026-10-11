@@ -223,7 +223,8 @@ try {
     await page.waitForFunction(count=>document.querySelectorAll('#pool .analysis-badge').length===count,fixtures.length,{timeout:30000});
     await page.waitForFunction(()=>document.querySelectorAll('#layer-list .layer-item').length===3);
     record('Round trip retained '+(await page.locator('#layer-list .layer-item').count())+' layer rows');
-    assert.match(await page.locator('#active-cut-count').innerText(),/1 selected scrap/);
+    assert.match(await page.locator('#canvas-info').innerText(),/1 pieces across 3 layers/,
+      'Restored project must retain its one active transferred cutout plus two frozen layers');
   });
   await stage('Responsive mobile collage desk remains usable',async()=>{
     await page.setViewportSize({width:390,height:844});
