@@ -38,4 +38,6 @@ The unchanged ALGO/ART guide geometry now supplies image-space selection regions
 
 The 13 automated checks pass, including mask corruption rejection, connected foreground selection, large fragment coverage, guide-based subject ranking, whole silhouettes, partial cuts around faces, and v1/v2 project compatibility. All application JavaScript parses and the HTML IDs, label targets and linked assets validate. The local static build verifies all three downloaded model hashes.
 
-Live recognition and export checks for this revision are pending deployment.
+The subject-geometry follow-up compares the actual ALGO/ART territory polygons with a cached 64 × 64 occupancy map of each segmented mask. In partial mode, regions that fall in a silhouette hole instead target the nearest visible foreground. This improves source selection without editing the upstream ALGO/ART generator. Unit tests cover misleading bounding boxes and a concave L-shaped silhouette.
+
+The automated suite does not prove that MediaPipe inference finishes in a real desktop or mobile browser. A post-deployment browser check with actual source photographs, manual picking, persistence, recomposition and PNG export is still required; no end-to-end subject-recognition claim is made here.

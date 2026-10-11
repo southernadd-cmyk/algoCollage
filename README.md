@@ -10,7 +10,7 @@ A browser collage studio built on [ALGO/ART](https://github.com/southernadd-cmyk
 
 ## Subject-aware cutting — 0.2
 
-- **Objects & faces** detects common objects and face locations, then traces foreground silhouettes. ALGO/ART territories rank the subjects and choose areas for partial cuts.
+- **Objects & faces** detects common objects and face locations, then traces foreground silhouettes. ALGO/ART territories rank subjects using actual foreground occupancy (not just their rectangular bounds), and partial cuts gravitate toward visible foreground rather than empty holes in a detected outline.
 - **Keep whole subjects** retains the entire detected silhouette. Turn it off to cut larger portions of an object. Partial windows expand around intersecting detected faces.
 - **Source coverage** controls how much material is kept in partial cuts and large image fragments. Default fallback windows retain about 72% of each source's area.
 - Images keep their original proportions during cutting. They are no longer cropped to the collage canvas first.

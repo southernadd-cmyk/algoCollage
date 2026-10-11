@@ -20,6 +20,6 @@ jobs:
         run: npm test
       - name: Check JavaScript syntax
         run: |
-          for file in js/*.js vendor/algoart/*.js; do
+          for file in js/*.js scripts/*.mjs vendor/algoart/*.js; do
             node --check "$file"
           done
