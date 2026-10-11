@@ -53,7 +53,7 @@ export function captureLayer(scene,id,name) {
   const {width,height,slots,voids,strategy}=scene.layout;
   const settings=sanitiseSettings(scene.settings);
   return {id,name:String(name||'Locked layer').slice(0,80),
-    settings,layout:copy({width,height,slots,voids,strategy}),
+    settings,layout:copy({width,height,slots,voids,strategy}),cuts:{width:scene.cuts.width,height:scene.cuts.height},
     pieces:scene.pieces.map((piece,index)=>({
       imageId:piece.imageId,slot:copy(piece.slot),mask:copy(piece.mask),
       // Scope fragment caching to this immutable snapshot.
@@ -85,6 +85,8 @@ export function validateLockedLayers(value,imageIds,orientation) {
     const settings=sanitiseSettings(layer.settings);
     if(settings.orientation!==orientation)throw new Error('Locked layers must share one canvas orientation.');
     const source=layer.layout;
+    const cutSize=layer.cuts;
+    if(!cutSize||![cutSize.width,cutSize.height].every(n=>finite(n)&&n>=100&&n<=5000))throw new Error('Invalid locked cutting canvas.');
     if(!source||![source.width,source.height].every(n=>finite(n)&&n>=100&&n<=5000)||
        !Array.isArray(source.slots)||source.slots.length>48||!Array.isArray(source.voids)||source.voids.length>200)throw new Error('Invalid locked layout.');
     const validateShape=p=>{
@@ -105,8 +107,8 @@ export function validateLockedLayers(value,imageIds,orientation) {
       if(mask.sourceWidth!==undefined&&(!finite(mask.sourceWidth)||mask.sourceWidth<=0||mask.sourceWidth>5000))throw new Error('Invalid locked source width.');
       if(mask.sourceHeight!==undefined&&(!finite(mask.sourceHeight)||mask.sourceHeight<=0||mask.sourceHeight>5000))throw new Error('Invalid locked source height.');
       return {imageId:piece.imageId,slot,mask:copy(mask),fragmentId:'locked:'+layer.id+':'+index,
-        layerSettings:settings,layerCuts:{width:source.width,height:source.height}};
+        layerSettings:settings,layerCuts:copy(cutSize)};
     });
-    return {id:layer.id,name:String(layer.name||'Locked layer').slice(0,80),settings,layout,pieces};
+    return {id:layer.id,name:String(layer.name||'Locked layer').slice(0,80),settings,layout,cuts:copy(cutSize),pieces};
   });
 }
