@@ -21,7 +21,7 @@
 <header class="masthead">
   <div class="brand-block">
     <a class="brand" href="./" aria-label="Algo Collage home"><span class="phi" aria-hidden="true">φ</span><span class="brand-word">ALGO<span class="slash">/</span>COLLAGE</span></a>
-    <span class="edition">AN EXPERIMENT IN CUTTING THINGS UP · V0.4</span>
+    <span class="edition">AN EXPERIMENT IN CUTTING THINGS UP · V0.6</span>
   </div>
   <p class="strap">THE DIGITAL <em>SCISSORS &amp; GLUE</em> CLUB</p>
   <nav class="project-actions" aria-label="Project"><button id="open-project">Open project</button><button id="save-project">Save project</button><a href="https://github.com/southernadd-cmyk/algoCollage" target="_blank" rel="noopener noreferrer" aria-label="Algo Collage on GitHub">GitHub ↗</a></nav>
@@ -40,32 +40,11 @@
         <div class="paired"><div><label for="provider">Image source</label><select id="provider"><option value="commons">Wikimedia Commons</option><option value="openverse">Openverse</option></select></div><div><label for="license-policy">Search licences</label><select id="license-policy"><option value="public">Public domain / CC0</option><option value="attribution">Include CC BY / BY-SA</option></select></div></div>
       </form>
       <div class="upload-row"><button id="upload-button" class="upload-button">＋ Upload your images</button><span>or drop files here</span></div>
+      <button id="open-cut-room" type="button" class="source-cut-room-link">✂ Open the Cutting Room →</button>
       <p id="search-status" class="small-note" role="status">Free image sources. No API keys required.</p>
       <p id="license-note" class="small-note" hidden>CC BY / BY-SA images need credits. BY-SA adaptations may also need a compatible ShareAlike licence. Source links are kept with your images.</p>
       <div id="results" class="results" aria-label="Image search results"></div>
       <button id="more-results" class="wide" hidden>More results</button>
-    </section>
-    <section class="composition-section">
-      <div class="section-heading"><span class="step">02 / CUT</span><h2>Get the<br><i>scissors.</i></h2></div>
-      <p class="intro">The ALGO/ART engine finds the rhythm. You decide what to keep and where to layer it.</p>
-      <div class="cut-cta">
-        <span class="eyebrow">01 — CUTTING ROOM</span>
-        <p id="active-cut-count" role="status">This layer has no pieces on the board yet.</p>
-        <button id="open-cut-room" class="primary wide" type="button">✂ Open cutting room ↗</button>
-        <p class="small-note">First choose and cut individual scraps. Then transfer them to the assembly board. The next layer gets a fresh cutting room.</p>
-      </div>
-      <div class="paired engine-choices"><div><span class="small-note">Assembly baseline</span><p id="baseline-kind" class="baseline-kind">Orbital studies</p></div></div>
-      <div class="seed-row"><label for="layout-seed">Current layout ID</label><input id="layout-seed" maxlength="80"></div>
-      <p id="baseline-note" class="small-note" role="status">Infinite variations, one collage at a time. Try a new baseline at the workbench.</p>
-      <details open><summary>Composition &amp; paper <span>＋</span></summary>
-        <div class="range-field"><label for="pieces">Maximum pieces <output id="pieces-value" for="pieces">12</output></label><input id="pieces" type="range" min="6" max="48" value="12"></div>
-        
-        <div class="range-field"><label for="negative-space">Quiet space <output id="negativeSpace-value" for="negative-space">35</output></label><input id="negative-space" type="range" min="0" max="90" value="35"></div>
-        <div class="range-field"><label for="scale">Piece scale <output id="scale-value" for="scale">185</output></label><input id="scale" type="range" min="60" max="230" value="185"></div>
-        <div class="range-field"><label for="rotation">Rotation <output id="rotation-value" for="rotation">14</output></label><input id="rotation" type="range" min="0" max="60" value="14"></div>
-        <div class="paired"><div><label for="orientation">Canvas</label><select id="orientation"><option value="portrait">Portrait · 1000 × 1400</option><option value="landscape">Landscape · 1400 × 1000</option><option value="square">Square · 1200 × 1200</option></select></div><div><label for="paper">Paper</label><select id="paper"><option value="#f4f0e5">Warm white</option><option value="#ffffff">White</option><option value="#e2d8c1">Buff</option><option value="#252924">Charcoal</option></select></div></div>
-        <div class="check-row"><label><input type="checkbox" id="shadow" checked> Paper shadows</label><label><input type="checkbox" id="monochrome"> Monochrome</label></div>
-      </details>
     </section>
     <details class="about"><summary>About this experiment <span>＋</span></summary><p>How far can the golden ratio govern a collage while its fragments remain unexpected?</p><p>The composition engine comes from <a href="https://southernadd-cmyk.github.io/algoart/" target="_blank" rel="noopener noreferrer">ALGO/ART ↗</a>. Its territories select subjects and large image regions. Another output supplies placement.</p><p>Objects &amp; faces uses local recognition and Sobel edge-guided contours. Faces take priority over full-person boxes, and oversized selections are rejected. Missed subjects become small details, not whole-image cuts; the Cut map lets you select a missed face. The separate Large image fragments mode is available when you want broad photographic blocks.</p><p>Your pool and outlines are saved in this browser. Save a project to keep the images, outlines and seeds together in a portable file.</p></details>
   </aside>
@@ -76,19 +55,37 @@
     </div>
     <div class="workbench-actions" aria-label="Build your composition">
       <div class="action-intro"><strong>02 / ASSEMBLY BOARD</strong><span>Pieces arrive here from the Cutting Room.</span></div>
-      <button id="go-to-cutting" class="action-shuffle" type="button">✂ Edit cutouts</button>
+      <button id="go-to-cutting" class="action-shuffle" type="button">✂ Return to Cutting Room</button>
       <button id="new-baseline" class="action-baseline" title="Try nine ALGO/ART variants and use a well-spread composition"><span aria-hidden="true">↻</span> New baseline</button>
       <button id="lock-layer" class="action-lock" disabled><span aria-hidden="true">▧</span> Lock layer + another</button>
       <button id="shuffle-images" class="action-shuffle" title="Shuffle the transferred pieces without changing the layout">Shuffle transferred scraps ⇄</button>
     </div>
     <div class="artboard-layout">
     <div class="stage-area">
-    <div class="canvas-bar"><div class="view-tabs" role="tablist" aria-label="Canvas view"><button id="view-collage" role="tab" aria-selected="true" aria-controls="canvas-panel" data-view="collage">Collage</button><button id="view-cuts" type="button">Cutting room ✂</button><button id="view-layout" role="tab" aria-selected="false" tabindex="-1" aria-controls="canvas-panel" data-view="layout">Layout map</button></div><button id="export" class="export-button" disabled>Export PNG ↓</button></div>
+    <div class="canvas-bar"><div class="view-tabs" role="tablist" aria-label="Canvas view"><button id="view-collage" role="tab" aria-selected="true" aria-controls="canvas-panel" data-view="collage">Collage</button><button id="view-layout" role="tab" aria-selected="false" tabindex="-1" aria-controls="canvas-panel" data-view="layout">Layout map</button></div><button id="export" class="export-button" disabled>Export PNG ↓</button></div>
     <div id="layout-inspector" class="layout-inspector" hidden><span id="layout-guide-name">Active layer guide</span><span id="layout-guide-meta"></span></div>
     <div id="canvas-panel" class="canvas-panel" role="tabpanel" aria-labelledby="view-collage">
       <div class="paper-wrap"><canvas id="artwork" width="1000" height="1400" role="img" aria-label="Collage canvas"></canvas><div id="empty-canvas" class="empty-canvas"><span class="empty-symbol" aria-hidden="true">φ</span><h2>Your board is waiting.<br>Cut some pieces.</h2><p>Collect some source images, open the Cutting Room, and transfer the fragments you want onto this board.</p><button id="empty-upload">＋ Add images</button><button id="empty-cut-room" type="button">✂ Open cutting room</button></div></div>
     </div>
     <div class="canvas-caption"><p id="canvas-info">A composition waiting for material.</p><button id="credits-button" disabled>Source credits ↗</button></div>
+    <div class="assembly-settings">
+      <span class="eyebrow">STEP 02 / ASSEMBLE — NO SCISSORS HERE</span>
+      <div class="assembly-settings-head"><h3>Arrange the scraps.</h3><p>Only controls for the board and layout live here. All cutting takes place in the Cutting Room.</p></div>
+      <div class="assembly-guide-fields">
+        <div><span class="small-note">ALGO/ART layout family</span><p id="baseline-kind" class="baseline-kind">Orbital studies</p></div>
+        <div class="seed-row"><label for="layout-seed">Layout ID</label><input id="layout-seed" maxlength="80"></div>
+      </div>
+      <p id="baseline-note" class="small-note" role="status">Try another baseline to rearrange only the transferred pieces.</p>
+      <details><summary>Arrangement &amp; paper <span>＋</span></summary>
+        <div class="range-field"><label for="pieces">Maximum pieces <output id="pieces-value" for="pieces">12</output></label><input id="pieces" type="range" min="6" max="48" value="12"></div>
+        
+        <div class="range-field"><label for="negative-space">Quiet space <output id="negativeSpace-value" for="negative-space">35</output></label><input id="negative-space" type="range" min="0" max="90" value="35"></div>
+        <div class="range-field"><label for="scale">Piece scale <output id="scale-value" for="scale">185</output></label><input id="scale" type="range" min="60" max="230" value="185"></div>
+        <div class="range-field"><label for="rotation">Rotation <output id="rotation-value" for="rotation">14</output></label><input id="rotation" type="range" min="0" max="60" value="14"></div>
+        <div class="paired"><div><label for="orientation">Canvas</label><select id="orientation"><option value="portrait">Portrait · 1000 × 1400</option><option value="landscape">Landscape · 1400 × 1000</option><option value="square">Square · 1200 × 1200</option></select></div><div><label for="paper">Paper</label><select id="paper"><option value="#f4f0e5">Warm white</option><option value="#ffffff">White</option><option value="#e2d8c1">Buff</option><option value="#252924">Charcoal</option></select></div></div>
+        <div class="check-row"><label><input type="checkbox" id="shadow" checked> Paper shadows</label><label><input type="checkbox" id="monochrome"> Monochrome</label></div>
+      </details>
+    </div>
     </div>
     <aside class="layer-rail" aria-label="Collage layers">
       <section class="layer-stack" aria-labelledby="layer-heading">
@@ -120,16 +117,17 @@
   <div class="workflow-steps" aria-label="Collage workflow"><span class="active">01 / CUT &amp; SELECT</span><span>→</span><span>02 / TRANSFER</span><span>→</span><span>03 / ARRANGE &amp; LOCK</span></div>
   <div class="cut-room-body">
     <aside class="cut-room-tools">
-      <div class="cut-room-toolhead"><span class="eyebrow">CUTTING SETTINGS</span><p>Cut the source, not the composition.</p></div>
-            <label for="cut-style">Cutting method</label><select id="cut-style"><option value="subjects">Objects &amp; faces</option><option value="regions">Large image fragments</option><option value="geometric">Original geometric cuts</option></select>
+      <div class="cut-room-toolhead"><span class="eyebrow">CUTTING SETTINGS · ONLY HERE</span><p>Choose how to cut the photograph. The board stays unchanged until transfer.</p></div>
+            <label for="cut-style">Cutting method</label><select id="cut-style"><option value="subjects">Recognised objects &amp; faces</option><option value="regions">Photographic fragments</option><option value="geometric">Geometric shapes</option></select>
+      <p id="cut-method-explanation" class="method-explanation" role="status">Recognised objects follow their detected outlines. Change methods to create different types of cutout.</p>
       <div class="cut-options">
         <div class="range-field"><label for="cut-size">Source coverage <output id="cutSize-value" for="cut-size">80</output></label><input id="cut-size" type="range" min="35" max="100" value="80"></div>
-        <label class="subject-check"><input id="whole-subjects" type="checkbox" checked> Keep whole subjects</label>
+        <label class="subject-check"><input id="whole-subjects" type="checkbox" checked> Keep whole subjects (untick for detail cuts)</label>
         <p id="cutting-status" class="small-note" role="status">Add images to find their subjects. Smaller source details appear first.</p>
         <button id="find-subjects" class="wide" disabled>Find subjects again ↻</button>
         <p class="small-note">Recognition runs on your device. Face outlines take priority. If a painting is missed, pick the face directly in the Cut map; broad image windows belong to Large image fragments.</p>
       </div>
-      <div class="paired engine-choices"><div><label for="cut-mode">Selection regions</label><select id="cut-mode"><option value="geometric">Constructed forms</option><option value="rects">Recursive divisions</option><option value="field">Orbital shapes</option></select></div></div>
+      <div class="paired engine-choices" id="cut-geometry-options"><div><label for="cut-mode">ALGO/ART cut geometry</label><select id="cut-mode"><option value="geometric">Constructed forms</option><option value="rects">Recursive divisions</option><option value="field">Orbital shapes</option></select></div></div>
       <div class="seed-row"><label for="cut-seed">Cut seed</label><input id="cut-seed" maxlength="80"><button id="recut" title="Make new cuts; keep the assembly seed">Re-cut ↻</button></div>
 
       <div class="range-field"><label for="detail">Region detail <output id="detail-value" for="detail">18</output></label><input id="detail" type="range" min="8" max="60" value="18"></div>
@@ -142,11 +140,12 @@
           <div id="cut-inspector" class="cut-inspector" hidden><label for="cut-preview-image">Inspect image</label><select id="cut-preview-image"></select><button id="pick-subject" aria-pressed="false">Pick a subject</button><p id="pick-help" class="small-note">Dashed lines are ALGO/ART regions. Bright areas are the pieces retained.</p></div>
 
       <div class="cut-map-mat"><canvas id="cut-workspace-canvas" width="1000" height="1400" role="img" aria-label="Cutting preview of source photograph"></canvas></div>
-      <p class="small-note">These outlines are the actual cutouts. Use <strong>Pick a subject</strong> to trace a missed object on the photograph.</p>
+      <p class="small-note" id="cut-preview-explanation">This is a live preview of the selected cutting method. The Assembly Board will not change until you transfer the scraps.</p>
     </section>
     <aside class="cut-room-tray">
       <div class="cut-room-section-head"><span class="eyebrow">CHOOSE YOUR CUTOUTS</span><span id="candidate-count">0 found</span></div>
-      <p class="small-note">Click individual scraps to add or remove them from this layer.</p>
+      <p class="small-note">Select the proposed cutouts from the current method. Switching methods updates these candidates; previously transferred board pieces remain untouched.</p>
+      <button id="reset-cut-tray" type="button" class="reset-cut-tray">Clear selection tray</button>
       <div id="cutout-candidates" class="cutout-candidates" aria-label="Available cutouts"></div>
       <div class="selected-scraps">
         <h3>Ready to transfer <span id="selection-count">0</span></h3>
