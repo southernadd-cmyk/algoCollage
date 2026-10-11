@@ -103,19 +103,22 @@ try {
         'Region settings cannot pretend to modify a full recognised face');
       await saveScreenshot('mona-face-whole');
       await page.locator('#cut-style').selectOption('regions');
+      await page.waitForFunction(()=>document.querySelector('#candidate-count')?.textContent?.includes('photographic'));
       await page.waitForFunction(()=>document.querySelector('#cutout-candidates')?.children.length>=2);
       const fragmentFingerprint=await page.locator('#cut-workspace-canvas').evaluate(c=>c.toDataURL());
       assert.notEqual(fragmentFingerprint,faceFingerprint,'Photographic fragments must change the visible Mona Lisa cuts');
       assert.ok(await page.locator('#cut-mode').isEnabled());
       await saveScreenshot('mona-photo-fragments');
       await page.locator('#cut-style').selectOption('geometric');
+      await page.waitForFunction(()=>document.querySelector('#candidate-count')?.textContent?.includes('geometric'));
       await page.waitForFunction(()=>document.querySelector('#cutout-candidates')?.children.length>=2);
       const geometricFingerprint=await page.locator('#cut-workspace-canvas').evaluate(c=>c.toDataURL());
       assert.notEqual(geometricFingerprint,fragmentFingerprint,'Geometric mode must show genuinely different masks');
       await saveScreenshot('mona-geometric-shapes');
       await page.locator('#cut-style').selectOption('subjects');
       await page.locator('#whole-subjects').uncheck();
-      await page.waitForFunction(()=>document.querySelector('#cutout-candidates')?.children.length>=3);
+      await page.waitForFunction(()=>document.querySelector('#candidate-count')?.textContent?.includes('recognised/detail')&&
+        document.querySelector('#cutout-candidates')?.children.length>=3);
       assert.ok(await page.locator('#cut-mode').isEnabled(),'ALGO/ART region controls must affect partial face cuts');
       await saveScreenshot('mona-partial-details');
       await page.locator('#whole-subjects').check();
@@ -147,10 +150,12 @@ try {
     await page.waitForTimeout(350);
     const unchanged=await page.locator('#artwork').evaluate(canvas=>canvas.toDataURL('image/png'));
     assert.equal(unchanged,previousPixels,'Cut settings must not silently change previously transferred board pieces');
+    assert.equal(await page.locator('#cutout-selection .cutout-tray-item').count(),0,
+      'Changing cutting modes must clear stale old-method scraps from the pending transfer tray');
     await page.locator('#cutout-candidates .cutout-card').first().click();
-    assert.equal(await page.locator('#cutout-selection .cutout-tray-item').count(),fixtures.length+1);
+    assert.equal(await page.locator('#cutout-selection .cutout-tray-item').count(),1);
     await page.locator('#transfer-cutouts').click();
-    await page.waitForFunction(count=>document.querySelector('#canvas-info')?.textContent?.startsWith(count+' pieces'),fixtures.length+1);
+    await page.waitForFunction(()=>document.querySelector('#canvas-info')?.textContent?.startsWith('1 pieces'));
     const oldLayout=await page.locator('#layout-seed').inputValue();
     await page.locator('#new-baseline').click();
     assert.notEqual(await page.locator('#layout-seed').inputValue(),oldLayout);
