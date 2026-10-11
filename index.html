@@ -118,7 +118,7 @@
   <div class="cut-room-body">
     <aside class="cut-room-tools">
       <div class="cut-room-toolhead"><span class="eyebrow">CUTTING SETTINGS · ONLY HERE</span><p>Choose how to cut the photograph. The board stays unchanged until transfer.</p></div>
-            <label for="cut-style">Cutting method</label><select id="cut-style"><option value="subjects">Recognised objects &amp; faces</option><option value="regions">Photographic fragments</option><option value="geometric">Geometric shapes</option></select>
+            <label for="cut-style">Cutting method</label><select id="cut-style"><option value="subjects">Recognised objects &amp; faces</option><option value="regions">Photographic fragments</option><option value="geometric">Geometric shapes</option><option value="manual">✂ Freehand scissors</option></select>
       <p id="cut-method-explanation" class="method-explanation" role="status">Recognised objects follow their detected outlines. Change methods to create different types of cutout.</p>
       <div class="cut-options">
         <div class="range-field"><label for="cut-size">Source coverage <output id="cutSize-value" for="cut-size">80</output></label><input id="cut-size" type="range" min="35" max="100" value="80"></div>
@@ -139,7 +139,15 @@
       <div id="cut-source-list" class="cut-source-list" aria-label="Select a source photograph"></div>
           <div id="cut-inspector" class="cut-inspector" hidden><label for="cut-preview-image">Inspect image</label><select id="cut-preview-image"></select><button id="pick-subject" aria-pressed="false">Pick a subject</button><p id="pick-help" class="small-note">Dashed lines are ALGO/ART regions. Bright areas are the pieces retained.</p></div>
 
-      <div class="cut-map-mat"><canvas id="cut-workspace-canvas" width="1000" height="1400" role="img" aria-label="Cutting preview of source photograph"></canvas></div>
+      <div id="freehand-controls" class="freehand-controls" hidden>
+        <div><strong>✂ DRAW YOUR CUT</strong><p id="freehand-help" role="status">Trace around a piece with your mouse, finger or pen. Lift to close and cut. Each shape joins your selection tray.</p></div>
+        <button id="undo-hand-cut" type="button" disabled>↶ Undo last cut</button>
+        <button id="clear-hand-cuts" type="button" disabled>Clear drawn cuts</button>
+      </div>
+      <div class="cut-map-mat"><div class="cut-map-surface">
+        <canvas id="cut-workspace-canvas" width="1000" height="1400" role="img" aria-label="Cutting preview of source photograph"></canvas>
+        <canvas id="freehand-overlay" width="1000" height="1400" aria-label="Draw a freehand outline over this photograph" hidden></canvas>
+      </div></div>
       <p class="small-note" id="cut-preview-explanation">This is a live preview of the selected cutting method. The Assembly Board will not change until you transfer the scraps.</p>
     </section>
     <aside class="cut-room-tray">
