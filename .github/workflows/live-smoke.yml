@@ -1,0 +1,41 @@
+name: Live Chrome smoke
+
+on:
+  workflow_run:
+    workflows: ["Deploy GitHub Pages"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the deployed revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Install pinned browser test runtime
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Test live photography, recognition, masks and exports
+        run: node scripts/live-smoke.mjs
+        env:
+          ALGO_COLLAGE_URL: https://southernadd-cmyk.github.io/algoCollage/
+      - name: Keep screenshots, project and smoke log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-chrome-smoke
+          path: smoke-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
