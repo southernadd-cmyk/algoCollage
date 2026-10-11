@@ -249,6 +249,10 @@ function renderLayerList() {
     guide.setAttribute('aria-label','View layout map for '+label);
     guide.addEventListener('click',()=>{previewLayerId=id;renderLayerList();chooseView($('view-layout'));});
     row.append(title,guide);
+    const cutButton=element('button',null,isCurrent?'✂ Edit cuts':'✂ View cuts');
+    cutButton.type='button';cutButton.setAttribute('aria-label',isCurrent?'Edit cutting room for active layer':'View archived cutting room for '+label);
+    cutButton.addEventListener('click',()=>openCutRoom(id));
+    row.append(cutButton);
     if(!isCurrent) {
       const remove=element('button',null,'Remove');remove.type='button';
       remove.setAttribute('aria-label','Remove '+label+' from collage');
@@ -327,12 +331,14 @@ function renderPool() {
     const img=element('img');img.src=image.objectURL;img.alt=image.title;img.title=image.title;
     const remove=element('button','remove-image','×');remove.setAttribute('aria-label','Remove '+image.title+' from pool');
     remove.addEventListener('click',()=>{
-      if(referencedLayerImages(lockedLayers).has(image.id)){notice('This image belongs to a locked layer. Remove that layer before deleting the image.',true);return;}
+      if(referencedLayerImages(lockedLayers).has(image.id)||activeCutouts.some(c=>c.imageId===image.id)||stagedCutouts.some(c=>c.imageId===image.id)){
+        notice('This photograph supplies a locked or selected cutout. Remove the cutout before deleting its source.',true);return;
+      }
       images=images.filter(i=>i!==image);URL.revokeObjectURL(image.objectURL);poolChanged();
     });
     const title=element('p',null,image.title);title.title=image.title;
     const inspect=element('button','inspect-image','Cut map ↗');inspect.setAttribute('aria-label','Inspect cuts for '+image.title);
-    inspect.addEventListener('click',()=>{previewImageId=image.id;syncInspector();chooseView($('view-cuts'));$('canvas-panel').scrollIntoView({block:'center',behavior:'smooth'});});
+    inspect.addEventListener('click',()=>{previewImageId=image.id;openCutRoom();});
     const state=analysisStates.get(image),summary=state?.busy?state.message:state?.error?(settings.cutStyle==='subjects'?'Bounded detail · retry available':'Large fragments · retry available'):image.analysis?.subjects.length?image.analysis.subjects.length+' subject'+(image.analysis.subjects.length===1?'':'s'):settings.cutStyle==='subjects'?'Bounded detail':'Large fragments';
     const badge=element('span','analysis-badge',summary);badge.title=state?.error?'Subject recognition failed: '+state.error:summary;
     const use=element('label');const checkbox=element('input');checkbox.type='checkbox';checkbox.checked=image.enabled!==false;checkbox.setAttribute('aria-label','Use '+image.title+' in collage');
@@ -461,7 +467,7 @@ async function exportPNG() {
 async function saveProject() {
   $('save-project').disabled=true;
   try {
-    const project=await projectDocument(settings,images,lockedLayers),blob=new Blob([JSON.stringify(project)],{type:'application/json'});
+    const project=await projectDocument(settings,images,lockedLayers,activeCutouts),blob=new Blob([JSON.stringify(project)],{type:'application/json'});
     if(blob.size>MAX_PROJECT_BYTES)throw new Error('This project is too large to save. Remove some images.');
     download(blob,filename('json'));notice('Project saved with its image pool, settings and seeds.');
   } catch(error){notice('Project save failed: '+error.message,true);}finally{$('save-project').disabled=false;}
@@ -480,7 +486,10 @@ async function openProject(file) {
     }
     analyser.cancelAll();analysisStates.clear();images.forEach(i=>URL.revokeObjectURL(i.objectURL));images=next;next=[];
     settings=project.settings;lockedLayers=project.layers;previewLayerId='current';currentScene=null;
-    cutKey='';layoutKey='';syncControls();rememberSettings();poolChanged();notice('Project opened with '+lockedLayers.length+' locked layers.');
+    activeCutouts=project.cutouts||[];stagedCutouts=activeCutouts.slice();legacyCutoutMigration=project.cutouts===null;
+    if($('cut-room').open)closeCutRoom();
+    cutKey='';layoutKey='';syncControls();rememberSettings();poolChanged();
+    notice('Project opened with '+lockedLayers.length+' locked layers and '+activeCutouts.length+' transferred cutouts.');
   } catch(error){next.forEach(i=>URL.revokeObjectURL(i.objectURL));notice('The project could not be opened: '+error.message,true);}
   finally{$('project-input').value='';}
 }
@@ -489,15 +498,20 @@ for(const [key,id] of Object.entries(controlMap)) {
   const input=$(id);input.addEventListener(input.type==='range'?'input':'change',()=>{
     if(key==='orientation'&&lockedLayers.length){syncControls();notice('Remove locked layers before changing the canvas orientation.',true);return;}
     const value=input.type==='checkbox'?input.checked:input.type==='range'?Number(input.value):input.value;
+    if(key==='pieces'&&value<activeCutouts.length){
+      syncControls();notice('The current layer has '+activeCutouts.length+' transferred scraps. Remove some in the Cutting Room before lowering the piece limit.',true);return;
+    }
     settings=sanitiseSettings({...settings,[key]:value});fragmentCache.clear();syncControls();rememberSettings();rebuild();
   });
 }
 const regenerate=(key,prefix)=>{settings={...settings,[key]:newSeed(prefix)};syncControls();rememberSettings();rebuild();};
 $('recut').addEventListener('click',()=>regenerate('cutSeed','CUT'));
-function nextBaseline() {
+function nextBaseline(minPieces=activeCutouts.length) {
   const modes=['field','geometric','rects'];
-  const candidates=Array.from({length:9},(_,i)=>({mode:modes[i%3],seed:newSeed('LAYOUT')}));
-  return pickSpreadBaseline(A,settings,candidates);
+  const candidates=Array.from({length:minPieces>9?30:18},(_,i)=>({mode:modes[i%3],seed:newSeed('LAYOUT')}));
+  const available=candidates.filter(candidate=>makeLayout(A,sanitiseSettings({...settings,layoutMode:candidate.mode,layoutSeed:candidate.seed})).slots.length>=minPieces);
+  if(!available.length)throw new Error('No new guide has '+minPieces+' placement positions. Reduce cutouts or increase Maximum pieces.');
+  return pickSpreadBaseline(A,settings,available);
 }
 $('new-baseline').addEventListener('click',()=>{
   try {
@@ -515,13 +529,21 @@ $('lock-layer').addEventListener('click',()=>{
     const next=nextBaseline();
     const newLayer=captureLayer(currentScene,crypto.randomUUID(),'Layer '+(lockedLayers.length+1));
     lockedLayers=[...lockedLayers,newLayer];
+    activeCutouts=[];stagedCutouts=[];
     settings=sanitiseSettings({...settings,layoutMode:next.mode,layoutSeed:next.seed});
     previewLayerId='current';fragmentCache.clear();
     syncControls();rememberSettings();rebuild();void persist();
-    notice(newLayer.name+' locked. Layer '+(lockedLayers.length+1)+' has a new independent guide.');
+    requestAnimationFrame(()=>openCutRoom());
+    notice(newLayer.name+' locked. Cut new pieces in the Cutting Room for Layer '+(lockedLayers.length+1)+'.');
   }catch(error){notice('Could not lock the layer: '+error.message,true);}
 });
-$('shuffle-images').addEventListener('click',()=>regenerate('imageSeed','POOL'));
+$('shuffle-images').addEventListener('click',()=>{
+  if(activeCutouts.length<2){notice('Transfer at least two cutouts before shuffling them.',true);return;}
+  const seed=newSeed('POOL'),rng=A.makeR(seed),scraps=activeCutouts.slice();
+  for(let i=scraps.length-1;i>0;i--){const j=rng.int(0,i);[scraps[i],scraps[j]]=[scraps[j],scraps[i]];}
+  activeCutouts=scraps;stagedCutouts=scraps.slice();
+  settings={...settings,imageSeed:seed};rememberSettings();rebuild();void persist();
+});
 $('search-form').addEventListener('submit',event=>{event.preventDefault();void doSearch();});
 document.querySelectorAll('[data-topic]').forEach(button=>button.addEventListener('click',()=>{$('query').value=button.dataset.topic;void doSearch();}));
 $('more-results').addEventListener('click',()=>void doSearch(true));
@@ -534,7 +556,9 @@ $('export').addEventListener('click',()=>void exportPNG());$('credits-button').a
 $('close-credits').addEventListener('click',()=>$('credits-dialog').close());
 $('download-credits').addEventListener('click',()=>download(new Blob([creditsText(scene,images)],{type:'text/plain;charset=utf-8'}),filename('credits.txt')));
 $('clear-pool').addEventListener('click',()=>{
-  if(lockedLayers.length){notice('Remove locked layers before clearing their source images.',true);return;}
+  if(lockedLayers.length||activeCutouts.length||stagedCutouts.length){
+    notice('Remove all layer cutouts before clearing their source images.',true);return;
+  }
   analyser.cancelAll();analysisStates.clear();images.forEach(i=>URL.revokeObjectURL(i.objectURL));images=[];poolChanged();});
 $('pool-select-all').addEventListener('click',()=>{images.forEach(i=>i.enabled=true);poolChanged();});
 const tabs=Array.from(document.querySelectorAll('[data-view]'));
@@ -583,6 +607,9 @@ try {
   }
   try {lockedLayers=validateLockedLayers(stored.layers,images.map(i=>i.id),settings.orientation);}
   catch(error){lockedLayers=[];notice('The saved layer stack could not be restored: '+error.message,true);}
-  $('storage-status').textContent='Pool and layers saved in this browser. Save a project for a portable copy.';
+  try {activeCutouts=stored.cutouts===null?[]:validateCutouts(stored.cutouts,images.map(i=>i.id));}
+  catch(error){activeCutouts=[];notice('The selected cutouts could not be restored: '+error.message,true);}
+  stagedCutouts=activeCutouts.slice();legacyCutoutMigration=stored.cutouts===null&&images.length>0;
+  $('storage-status').textContent='Images, locked layers, and transferred cutouts saved in this browser.';
 } catch {$('storage-status').textContent='Browser storage is unavailable. Save a project file to keep your pool.';$('storage-status').classList.add('error');}
 hydrating=false;renderPool();syncInspector();updateAnalysisStatus();rebuild();
