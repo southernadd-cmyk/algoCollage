@@ -84,11 +84,43 @@ try {
   });
   await stage('Cutting Room previews, selects and transfers individual fragments',async()=>{
     assert.ok(await page.locator('#cut-room').count(),'The Cutting Room is missing');
-    await page.locator('#view-cuts').click();
+    await page.locator('#open-cut-room').click();
     await page.locator('#cut-room').waitFor({state:'visible'});
     const sources=page.locator('#cut-source-list .cut-source');
     assert.equal(await sources.count(),fixtures.length);
     await page.locator('#cutout-candidates .cutout-card').first().waitFor();
+    assert.ok(await page.locator('#cut-mode').isVisible(),'Cut geometry controls must live inside the cutting modal');
+    assert.equal(await page.locator('.assembly-settings').isVisible(),false,
+      'Assembly controls should be blocked by the modal');
+    if(painting){
+      const monaIndex=fixtures.findIndex(f=>f.name==='mona-lisa.jpg');
+      await sources.nth(monaIndex).click();
+      await page.locator('#cut-style').selectOption('subjects');
+      await page.locator('#whole-subjects').check();
+      await page.waitForFunction(()=>document.querySelector('#cutout-candidates')?.children.length===1);
+      const faceFingerprint=await page.locator('#cut-workspace-canvas').evaluate(c=>c.toDataURL());
+      assert.ok(await page.locator('#cut-mode').isDisabled(),
+        'Region settings cannot pretend to modify a full recognised face');
+      await saveScreenshot('mona-face-whole');
+      await page.locator('#cut-style').selectOption('regions');
+      await page.waitForFunction(()=>document.querySelector('#cutout-candidates')?.children.length>=2);
+      const fragmentFingerprint=await page.locator('#cut-workspace-canvas').evaluate(c=>c.toDataURL());
+      assert.notEqual(fragmentFingerprint,faceFingerprint,'Photographic fragments must change the visible Mona Lisa cuts');
+      assert.ok(await page.locator('#cut-mode').isEnabled());
+      await saveScreenshot('mona-photo-fragments');
+      await page.locator('#cut-style').selectOption('geometric');
+      await page.waitForFunction(()=>document.querySelector('#cutout-candidates')?.children.length>=2);
+      const geometricFingerprint=await page.locator('#cut-workspace-canvas').evaluate(c=>c.toDataURL());
+      assert.notEqual(geometricFingerprint,fragmentFingerprint,'Geometric mode must show genuinely different masks');
+      await saveScreenshot('mona-geometric-shapes');
+      await page.locator('#cut-style').selectOption('subjects');
+      await page.locator('#whole-subjects').uncheck();
+      await page.waitForFunction(()=>document.querySelector('#cutout-candidates')?.children.length>=3);
+      assert.ok(await page.locator('#cut-mode').isEnabled(),'ALGO/ART region controls must affect partial face cuts');
+      await saveScreenshot('mona-partial-details');
+      await page.locator('#whole-subjects').check();
+      await page.waitForFunction(()=>document.querySelector('#cutout-candidates')?.children.length===1);
+    }
     await saveScreenshot('cutting-room-source');
     for(let i=0;i<fixtures.length;i++){
       await sources.nth(i).click();
