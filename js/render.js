@@ -1,4 +1,13 @@
+import {decodeMask} from './subject-data.js';
 const colours=['#d45435','#27614f','#ba9138','#515f86','#a77083'];
+const alphaCache=new WeakMap();
+function alphaCanvas(mask) {
+  if(alphaCache.has(mask))return alphaCache.get(mask);
+  const canvas=document.createElement('canvas');canvas.width=mask.width;canvas.height=mask.height;
+  const ctx=canvas.getContext('2d'),data=ctx.createImageData(mask.width,mask.height),pixels=decodeMask(mask);
+  for(let i=0;i<pixels.length;i++){data.data[i*4]=255;data.data[i*4+1]=255;data.data[i*4+2]=255;data.data[i*4+3]=pixels[i];}
+  ctx.putImageData(data,0,0);alphaCache.set(mask,canvas);return canvas;
+}
 function path(ctx, points, ox=0, oy=0) {
   ctx.beginPath(); points.forEach((p,i)=>ctx[i?'lineTo':'moveTo'](p.x-ox,p.y-oy)); ctx.closePath();
 }
@@ -17,7 +26,12 @@ export function fragmentCanvas(piece,cuts,image) {
   const {bounds,points}=piece.mask;
   const canvas=document.createElement('canvas'); canvas.width=Math.ceil(bounds.w);canvas.height=Math.ceil(bounds.h);
   const ctx=canvas.getContext('2d');ctx.translate(-bounds.x,-bounds.y);path(ctx,points);ctx.clip();
-  coverImage(ctx,image.element,0,0,cuts.width,cuts.height);
+  if(piece.mask.sourceWidth)ctx.drawImage(image.element,0,0,piece.mask.sourceWidth,piece.mask.sourceHeight);
+  else coverImage(ctx,image.element,0,0,cuts.width,cuts.height);
+  if(piece.mask.alpha) {
+    ctx.globalCompositeOperation='destination-in';
+    ctx.drawImage(alphaCanvas(piece.mask.alpha),0,0,piece.mask.sourceWidth,piece.mask.sourceHeight);
+  }
   return canvas;
 }
 export function renderCollage(canvas,scene,images,{scale=1,cache=new Map()}={}) {
@@ -29,6 +43,10 @@ export function renderCollage(canvas,scene,images,{scale=1,cache=new Map()}={}) 
     const image=lookup.get(piece.imageId); if (!image?.element) continue;
     const {bounds,points}=piece.mask, p=piece.slot;
     let factor=p.w ? Math.min(p.w/bounds.w,p.h/bounds.h)*0.92*(settings.scale/165) : p.size/bounds.w*(settings.scale/100);
+    if(settings.cutStyle!=='geometric'&&!p.w) {
+      const minimum=layout.width*(p.tier==='hero'?.28:p.tier==='medium'?.22:.18)*(settings.scale/165);
+      factor=Math.max(factor,Math.min(minimum/bounds.w,layout.height*.48/bounds.h));
+    }
     factor=Math.min(factor,layout.width*0.8/bounds.w,layout.height*0.65/bounds.h);
     let fragment=cache.get(piece.fragmentId);
     if (!fragment) {fragment=fragmentCanvas(piece,cuts,image);cache.set(piece.fragmentId,fragment);}
@@ -37,16 +55,38 @@ export function renderCollage(canvas,scene,images,{scale=1,cache=new Map()}={}) 
     if (settings.shadow) {ctx.shadowColor='rgba(30,23,16,.25)';ctx.shadowBlur=11;ctx.shadowOffsetX=4;ctx.shadowOffsetY=6;}
     ctx.drawImage(fragment,-bounds.w*factor/2,-bounds.h*factor/2,bounds.w*factor,bounds.h*factor);
     ctx.shadowColor='transparent';ctx.filter='none';ctx.scale(factor,factor);ctx.translate(-bounds.w/2,-bounds.h/2);
-    path(ctx,points,bounds.x,bounds.y);ctx.strokeStyle='rgba(255,252,243,.78)';ctx.lineWidth=1.5/Math.max(factor,0.2);ctx.stroke();
+    if(!piece.mask.alpha){path(ctx,points,bounds.x,bounds.y);ctx.strokeStyle='rgba(255,252,243,.78)';ctx.lineWidth=1.5/Math.max(factor,0.2);ctx.stroke();}
     ctx.restore();
   }
   return canvas;
 }
 
-export function renderCutMap(canvas,scene,images,{scale=0.5}={}) {
+export function renderCutMap(canvas,scene,images,{scale=0.5,imageId=null}={}) {
+  const selected=images.find(i=>i.id===imageId&&i.element)||images.find(i=>i.enabled!==false&&i.element)||images.find(i=>i.element);
+  const source=selected&&scene.imageCuts[selected.id];
+  if(source) {
+    const ctx=targetContext(canvas,source.width,source.height,scale);
+    paintPaper(ctx,source.width,source.height,scene.settings.paper);
+    ctx.globalAlpha=.62;ctx.drawImage(selected.element,0,0,source.width,source.height);ctx.globalAlpha=1;
+    // Faint engine outlines show the selection regions, not the final scissors.
+    ctx.setLineDash([8,6]);ctx.strokeStyle='rgba(35,65,49,.38)';ctx.lineWidth=2;
+    for(const guide of scene.cuts.masks) {path(ctx,guide.points.map(p=>({x:p.x/scene.cuts.width*source.width,y:p.y/scene.cuts.height*source.height})));ctx.stroke();}
+    ctx.setLineDash([]);
+    source.masks.forEach((mask,i)=>{
+      if(mask.alpha) {
+        const part=fragmentCanvas({mask},scene.cuts,selected);
+        ctx.drawImage(part,mask.bounds.x,mask.bounds.y,mask.bounds.w,mask.bounds.h);
+      }else {path(ctx,mask.points);ctx.globalAlpha=.16;ctx.fillStyle=colours[i%colours.length];ctx.fill();ctx.globalAlpha=1;ctx.strokeStyle=colours[i%colours.length];ctx.lineWidth=3;ctx.stroke();}
+      const {x,y,w,h}=mask.bounds,label=(i+1)+': '+mask.label;
+      ctx.font=`bold ${Math.max(14,source.width/65)}px monospace`;
+      const boxWidth=ctx.measureText(label).width+16,lx=Math.min(source.width-boxWidth,Math.max(0,x+w/2-boxWidth/2)),ly=Math.max(0,y+h/2-14);
+      ctx.fillStyle='#203b31';ctx.fillRect(lx,ly,boxWidth,28);ctx.fillStyle='#fff';ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(label,lx+8,ly+14);
+    });
+    return;
+  }
   const cuts=scene.cuts, ctx=targetContext(canvas,cuts.width,cuts.height,scale);
   paintPaper(ctx,cuts.width,cuts.height,scene.settings.paper);
-  const first=images.find(i=>i.enabled!==false && i.element);
+  const first=selected;
   if (first) {ctx.globalAlpha=0.45;coverImage(ctx,first.element,0,0,cuts.width,cuts.height);ctx.globalAlpha=1;}
   cuts.masks.forEach((mask,i)=>{
     path(ctx,mask.points);ctx.globalAlpha=0.2;ctx.fillStyle=colours[i%colours.length];ctx.fill();ctx.globalAlpha=1;

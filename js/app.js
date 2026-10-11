@@ -3,6 +3,9 @@ import { searchImages, fetchImage, MAX_IMAGES, MAX_IMAGE_BYTES, MAX_PROJECT_BYTE
 import { readPool, writePool, readSettings, writeSettings, projectDocument, validateProject } from './storage.js';
 import { renderCollage, renderCutMap, renderLayoutMap } from './render.js';
 import { pngWithCredits } from './png.js';
+import { SubjectAnalyser } from './analysis.js';
+import { guideRegions } from './image-cuts.js';
+import { validateAnalysis, duplicateSubject } from './subject-data.js';
 
 if (document.readyState === 'loading') await new Promise(resolve=>document.addEventListener('DOMContentLoaded',resolve,{once:true}));
 const $=id=>document.getElementById(id);
@@ -11,6 +14,8 @@ let settings=readSettings(), images=[], scene=null, view='collage';
 let cuts=null, layout=null, cutKey='', layoutKey='', fragmentCache=new Map();
 let searchController=null, searchSerial=0, searchState=null, searchResults=[], adding=new Set();
 let persistQueue=Promise.resolve(), frame=null, noticeTimer=null, hydrating=true;
+const analyser=new SubjectAnalyser(),analysisStates=new Map();
+let previewImageId=null,picking=false;
 
 function notice(text,error=false) {
   clearTimeout(noticeTimer);const node=$('notice');node.textContent=text;node.classList.toggle('error',error);node.hidden=false;
@@ -44,12 +49,15 @@ function persist() {
 
 const controlMap={cutMode:'cut-mode',layoutMode:'layout-mode',cutSeed:'cut-seed',layoutSeed:'layout-seed',
   orientation:'orientation',paper:'paper',pieces:'pieces',detail:'detail',negativeSpace:'negative-space',
-  scale:'scale',rotation:'rotation',shadow:'shadow',monochrome:'monochrome'};
+  scale:'scale',rotation:'rotation',shadow:'shadow',monochrome:'monochrome',cutStyle:'cut-style',cutSize:'cut-size',wholeSubjects:'whole-subjects'};
 function syncControls() {
   for(const [key,id] of Object.entries(controlMap)) {
     const input=$(id);if(input.type==='checkbox')input.checked=settings[key];else input.value=settings[key];
     const output=$(key+'-value');if(output)output.value=String(settings[key]);
   }
+  $('whole-subjects').disabled=settings.cutStyle!=='subjects';
+  $('cut-size').disabled=settings.cutStyle==='geometric';
+  updateAnalysisStatus();
 }
 function rebuild() {
   if(frame!==null)cancelAnimationFrame(frame);
@@ -60,27 +68,82 @@ function rebuild() {
       const nextLayoutKey=JSON.stringify([settings.layoutMode,settings.layoutSeed,settings.pieces,settings.orientation,settings.negativeSpace,settings.rotation]);
       if(nextCutKey!==cutKey) {cuts=makeCuts(A,settings);cutKey=nextCutKey;fragmentCache.clear();}
       if(nextLayoutKey!==layoutKey) {layout=makeLayout(A,settings);layoutKey=nextLayoutKey;}
-      scene=makeScene(A,settings,images,cuts,layout);draw();
+      scene=makeScene(A,settings,images,cuts,layout);draw();ensureAnalysis();
     } catch(error) {notice('The composition could not be created: '+error.message,true);}
   });
 }
 function draw() {
   if(!scene)return;
   const canvas=$('artwork'), active=images.filter(i=>i.enabled!==false);
-  if(view==='cuts')renderCutMap(canvas,scene,images,{scale:0.7});
+  if(view==='cuts')renderCutMap(canvas,scene,images,{scale:0.7,imageId:previewImageId});
   else if(view==='layout')renderLayoutMap(canvas,scene,{scale:0.7});
   else renderCollage(canvas,scene,images,{scale:1,cache:fragmentCache});
   $('empty-canvas').hidden=active.length>0 || view!=='collage';
   $('export').disabled=scene.pieces.length===0;
   $('credits-button').disabled=scene.pieces.length===0;
-  canvas.setAttribute('aria-label',view==='cuts' ? 'Cut map: '+cuts.masks.length+' geometric masks from '+cuts.strategy :
+  const inspected=images.find(i=>i.id===previewImageId)||active[0]||images[0],source=scene.imageCuts[inspected?.id];
+  canvas.setAttribute('aria-label',view==='cuts' ? 'Cut map: '+(source?.masks.length||cuts.masks.length)+' '+(source?.kind||'geometric')+' cuts'+(inspected?' from '+inspected.title:'') :
     view==='layout' ? 'Layout map: '+layout.slots.length+' positions from '+layout.strategy :
     'Collage of '+scene.pieces.length+' fragments from '+active.length+' active images');
-  $('canvas-info').textContent=view==='cuts' ? `${cuts.masks.length} cut shapes · ${cuts.strategy} · same map applied to every image` :
+  const subjectCount=scene.pieces.filter(p=>p.mask.kind==='subject').length;
+  $('canvas-info').textContent=view==='cuts' ? source ? `${source.masks.length} ${source.kind==='subjects'?'subject outlines':'large fragments'} · ${source.width} × ${source.height} source · guided by ${cuts.strategy}` : `${cuts.masks.length} geometric cut shapes · ${cuts.strategy}` :
     view==='layout' ? `${layout.slots.length} positions · ${layout.strategy} · ${layout.width} × ${layout.height}` :
-    `${scene.pieces.length} pieces · ${new Set(scene.pieces.map(p=>p.imageId)).size} images used · ${layout.width} × ${layout.height}`;
+    `${scene.pieces.length} pieces${subjectCount?' · '+subjectCount+' subject cuts':''} · ${new Set(scene.pieces.map(p=>p.imageId)).size} images used · ${layout.width} × ${layout.height}`;
+  $('cut-inspector').hidden=view!=='cuts'||!images.length;
+  $('pick-subject').disabled=settings.cutStyle!=='subjects'||!inspected||analysisStates.get(inspected)?.busy===true;
+  canvas.classList.toggle('picking',picking&&view==='cuts');
 }
-function poolChanged() {fragmentCache.clear();renderPool();renderResults();rebuild();void persist();}
+function poolChanged() {fragmentCache.clear();renderPool();renderResults();syncInspector();updateAnalysisStatus();rebuild();void persist();}
+
+function syncInspector() {
+  const select=$('cut-preview-image');select.replaceChildren();
+  if(!images.some(i=>i.id===previewImageId))previewImageId=images.find(i=>i.enabled!==false)?.id||images[0]?.id||null;
+  for(const image of images){const option=element('option',null,image.title);option.value=image.id;select.append(option);}
+  select.value=previewImageId||'';
+}
+function updateAnalysisStatus() {
+  const active=images.filter(i=>i.enabled!==false),busy=active.filter(i=>analysisStates.get(i)?.busy);
+  const found=active.filter(i=>i.analysis?.subjects.length),missed=active.filter(i=>i.analysis&&!i.analysis.subjects.length);
+  const failed=active.filter(i=>analysisStates.get(i)?.error);
+  $('find-subjects').disabled=!active.length||!!busy.length||settings.cutStyle!=='subjects';
+  const status=$('cutting-status'),current=busy.find(i=>analysisStates.get(i)?.message);
+  status.textContent=settings.cutStyle==='geometric'?'Original geometric masks cut each image to the canvas proportions.':
+    settings.cutStyle==='regions'?'Large fragments keep more of each source image.':
+    busy.length?`${busy.length} image${busy.length===1?'':'s'} waiting for subject outlines. ${current?analysisStates.get(current).message:''}`:
+    !active.length?'Add images to find their subjects. Large fragments appear first.':
+    `${found.length} of ${active.length} images have subject outlines.${missed.length?' '+missed.length+' use large fragments; select a subject in the Cut map.':''}${failed.length?' Subject tools unavailable for '+failed.length+'; large fragments retained.':''}`;
+}
+function ensureAnalysis() {
+  if(hydrating||settings.cutStyle!=='subjects')return;
+  for(const image of images)if(image.enabled!==false&&!image.analysis&&!analysisStates.has(image))void analyseImage(image);
+}
+async function analyseImage(image,point=null) {
+  if(analysisStates.get(image)?.busy)return;
+  const state={busy:true,message:'Queued for subject tracing…'};analysisStates.set(image,state);renderPool();updateAnalysisStatus();
+  try {
+    const result=validateAnalysis(await analyser.analyse(image.blob,guideRegions(cuts||makeCuts(A,settings)),{point,onProgress:message=>{
+      if(!images.includes(image))return;state.message=message;renderPool();updateAnalysisStatus();
+    }}));
+    if(!images.includes(image))return;
+    if(point) {
+      if(!result.subjects.length){notice('No usable outline at that point. Try the centre of the object.',true);return;}
+      const previous=image.analysis?.subjects||[];
+      result.subjects=[...result.subjects,...previous.filter(s=>!result.subjects.some(next=>duplicateSubject(s,next)))].slice(0,8);
+    }else {
+      const manual=image.analysis?.subjects.filter(s=>s.manual)||[];
+      result.subjects=[...manual,...result.subjects.filter(s=>!manual.some(previous=>duplicateSubject(previous,s)))].slice(0,8);
+    }
+    image.analysis=result;
+    if(point)notice('Subject outline added. It will be kept with this image.');
+  }catch(error) {
+    if(!images.includes(image)||error.message==='Cancelled')return;
+    state.error=error.message;
+    if(point)notice('Subject selection is unavailable: '+error.message,true);
+  }finally {
+    state.busy=false;
+    if(images.includes(image))poolChanged();
+  }
+}
 
 function renderPool() {
   const pool=$('pool');pool.replaceChildren();$('pool-count').textContent=images.length+' / '+MAX_IMAGES;
@@ -97,9 +160,13 @@ function renderPool() {
       images=images.filter(i=>i!==image);URL.revokeObjectURL(image.objectURL);poolChanged();
     });
     const title=element('p',null,image.title);title.title=image.title;
+    const inspect=element('button','inspect-image','Cut map ↗');inspect.setAttribute('aria-label','Inspect cuts for '+image.title);
+    inspect.addEventListener('click',()=>{previewImageId=image.id;syncInspector();chooseView($('view-cuts'));$('canvas-panel').scrollIntoView({block:'center',behavior:'smooth'});});
+    const state=analysisStates.get(image),summary=state?.busy?state.message:state?.error?'Large fragments · retry available':image.analysis?.subjects.length?image.analysis.subjects.length+' subject'+(image.analysis.subjects.length===1?'':'s'):'Large fragments';
+    const badge=element('span','analysis-badge',summary);badge.title=summary;
     const use=element('label');const checkbox=element('input');checkbox.type='checkbox';checkbox.checked=image.enabled!==false;checkbox.setAttribute('aria-label','Use '+image.title+' in collage');
     checkbox.addEventListener('change',()=>{image.enabled=checkbox.checked;poolChanged();});use.append(checkbox,document.createTextNode('Use'));
-    card.append(img,remove,title,use);if(image.sourceUrl)card.append(link('Source ↗',image.sourceUrl,'source-link'));pool.append(card);
+    card.append(img,remove,title,badge,inspect,use);if(image.sourceUrl)card.append(link('Source ↗',image.sourceUrl,'source-link'));pool.append(card);
   }
 }
 
@@ -240,7 +307,7 @@ async function openProject(file) {
       const {data,...metadata}=item;const blob=await (await fetch(data)).blob();const loaded=await imageElement(blob);
       next.push({...metadata,blob,...loaded});
     }
-    images.forEach(i=>URL.revokeObjectURL(i.objectURL));images=next;next=[];settings=project.settings;
+    analyser.cancelAll();analysisStates.clear();images.forEach(i=>URL.revokeObjectURL(i.objectURL));images=next;next=[];settings=project.settings;
     cutKey='';layoutKey='';syncControls();rememberSettings();poolChanged();notice('Project opened.');
   } catch(error){next.forEach(i=>URL.revokeObjectURL(i.objectURL));notice('The project could not be opened: '+error.message,true);}
   finally{$('project-input').value='';}
@@ -249,7 +316,7 @@ async function openProject(file) {
 for(const [key,id] of Object.entries(controlMap)) {
   const input=$(id);input.addEventListener(input.type==='range'?'input':'change',()=>{
     const value=input.type==='checkbox'?input.checked:input.type==='range'?Number(input.value):input.value;
-    settings=sanitiseSettings({...settings,[key]:value});syncControls();rememberSettings();rebuild();
+    settings=sanitiseSettings({...settings,[key]:value});fragmentCache.clear();syncControls();rememberSettings();rebuild();
   });
 }
 const regenerate=(key,prefix)=>{settings={...settings,[key]:newSeed(prefix)};syncControls();rememberSettings();rebuild();};
@@ -267,10 +334,11 @@ $('project-input').addEventListener('change',()=>void openProject($('project-inp
 $('export').addEventListener('click',()=>void exportPNG());$('credits-button').addEventListener('click',showCredits);
 $('close-credits').addEventListener('click',()=>$('credits-dialog').close());
 $('download-credits').addEventListener('click',()=>download(new Blob([creditsText(scene,images)],{type:'text/plain;charset=utf-8'}),filename('credits.txt')));
-$('clear-pool').addEventListener('click',()=>{images.forEach(i=>URL.revokeObjectURL(i.objectURL));images=[];poolChanged();});
+$('clear-pool').addEventListener('click',()=>{analyser.cancelAll();analysisStates.clear();images.forEach(i=>URL.revokeObjectURL(i.objectURL));images=[];poolChanged();});
 $('pool-select-all').addEventListener('click',()=>{images.forEach(i=>i.enabled=true);poolChanged();});
 const tabs=Array.from(document.querySelectorAll('[data-view]'));
 function chooseView(button) {
+  picking=false;$('pick-subject').setAttribute('aria-pressed','false');$('pick-help').textContent='Dashed lines are ALGO/ART regions. Bright areas are the pieces retained.';
   view=button.dataset.view;tabs.forEach(t=>{const selected=t===button;t.setAttribute('aria-selected',String(selected));t.tabIndex=selected?0:-1;});
   $('canvas-panel').setAttribute('aria-labelledby',button.id);draw();
 }
@@ -282,6 +350,20 @@ tabs.forEach((button,i)=>{
     chooseView(target);target.focus();
   });
 });
+$('cut-preview-image').addEventListener('change',()=>{previewImageId=$('cut-preview-image').value;picking=false;$('pick-subject').setAttribute('aria-pressed','false');draw();});
+$('find-subjects').addEventListener('click',()=>{
+  for(const image of images)if(image.enabled!==false)void analyseImage(image);
+});
+$('pick-subject').addEventListener('click',()=>{
+  picking=!picking;$('pick-subject').setAttribute('aria-pressed',String(picking));
+  $('pick-help').textContent=picking?'Click or tap inside the object you want to keep.':'Dashed lines are ALGO/ART regions. Bright areas are the pieces retained.';draw();
+});
+$('artwork').addEventListener('click',event=>{
+  if(!picking||view!=='cuts'||settings.cutStyle!=='subjects')return;
+  const image=images.find(i=>i.id===previewImageId);if(!image)return;
+  const rect=$('artwork').getBoundingClientRect(),point={x:(event.clientX-rect.left)/rect.width,y:(event.clientY-rect.top)/rect.height};
+  picking=false;$('pick-subject').setAttribute('aria-pressed','false');$('pick-help').textContent='Tracing the selected subject…';draw();void analyseImage(image,point);
+});
 let dragCount=0;
 document.addEventListener('dragover',event=>{if(event.dataTransfer.types.includes('Files')){event.preventDefault();event.dataTransfer.dropEffect='copy';}});
 document.addEventListener('dragenter',event=>{if(event.dataTransfer.types.includes('Files')){dragCount++;document.body.classList.add('dragging');}});
@@ -292,8 +374,12 @@ syncControls();
 try {
   const stored=await readPool();
   for(const item of stored.slice(0,MAX_IMAGES)) {
-    try {if(!(item.blob instanceof Blob)||!RASTER_TYPES.includes(item.blob.type))continue;images.push({...item,...await imageElement(item.blob)});}catch {notice('One saved image could not be reopened. The rest of your pool is available.',true);}
+    try {
+      if(!(item.blob instanceof Blob)||!RASTER_TYPES.includes(item.blob.type))continue;
+      let analysis;try{analysis=validateAnalysis(item.analysis);}catch{}
+      images.push({...item,analysis,...await imageElement(item.blob)});
+    }catch {notice('One saved image could not be reopened. The rest of your pool is available.',true);}
   }
   $('storage-status').textContent='Pool saved in this browser. Save a project for a portable copy.';
 } catch {$('storage-status').textContent='Browser storage is unavailable. Save a project file to keep your pool.';$('storage-status').classList.add('error');}
-hydrating=false;renderPool();rebuild();
+hydrating=false;renderPool();syncInspector();updateAnalysisStatus();rebuild();

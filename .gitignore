@@ -1,3 +1,5 @@
 node_modules/
+_site/
+.model-cache/
 test-results/
 *.log

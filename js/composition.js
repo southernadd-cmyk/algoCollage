@@ -1,10 +1,12 @@
 // Adapt the unchanged ALGO/ART V7 engine, rather than approximating its layouts.
-export const COLLAGE_VERSION = 1;
+import {makeImageCuts} from './image-cuts.js';
+export const COLLAGE_VERSION = 2;
 export const ENGINE_COMMIT = 'd231259ad08a690c1109a6af7f624c769c50eadc';
 export const DEFAULTS = Object.freeze({
   orientation: 'portrait', cutMode: 'geometric', layoutMode: 'field',
   cutSeed: 'CUT-001', layoutSeed: 'LAYOUT-001', imageSeed: 'POOL-001',
-  detail: 30, pieces: 18, negativeSpace: 55, rotation: 14, scale: 165,
+  detail: 18, pieces: 12, negativeSpace: 35, rotation: 14, scale: 185,
+  cutStyle: 'subjects', cutSize: 80, wholeSubjects: true,
   paper: '#f4f0e5', shadow: true, monochrome: false
 });
 export const MODES = ['field', 'geometric', 'rects'];
@@ -16,12 +18,13 @@ export function sanitiseSettings(input = {}) {
     if (typeof input[k] === 'string' && input[k].trim()) out[k] = input[k].trim().slice(0, 80);
   }
   for (const k of ['cutMode', 'layoutMode']) if (MODES.includes(input[k])) out[k] = input[k];
+  if (['subjects', 'regions', 'geometric'].includes(input.cutStyle)) out.cutStyle = input.cutStyle;
   if (['portrait', 'landscape', 'square'].includes(input.orientation)) out.orientation = input.orientation;
-  for (const [k, lo, hi] of [['detail', 8, 60], ['pieces', 6, 48], ['negativeSpace', 0, 90], ['rotation', 0, 60], ['scale', 60, 230]]) {
+  for (const [k, lo, hi] of [['detail', 8, 60], ['pieces', 6, 48], ['negativeSpace', 0, 90], ['rotation', 0, 60], ['scale', 60, 230], ['cutSize', 35, 100]]) {
     if (Number.isFinite(input[k])) out[k] = Math.round(clamp(input[k], lo, hi));
   }
   if (/^#[0-9a-f]{6}$/i.test(input.paper || '')) out.paper = input.paper;
-  for (const k of ['shadow', 'monochrome']) if (typeof input[k] === 'boolean') out[k] = input[k];
+  for (const k of ['shadow', 'monochrome', 'wholeSubjects']) if (typeof input[k] === 'boolean') out[k] = input[k];
   return out;
 }
 
@@ -142,11 +145,13 @@ export function makeScene(A, input, images, cuts = null, layout = null) {
   for (let i = order.length - 1; i > 0; i--) { const j = r.int(0, i); [order[i], order[j]] = [order[j], order[i]]; }
   const maskOrder = cuts.masks.slice();
   for (let i = maskOrder.length - 1; i > 0; i--) { const j = r.int(0, i); [maskOrder[i], maskOrder[j]] = [maskOrder[j], maskOrder[i]]; }
+  const imageCuts = settings.cutStyle === 'geometric' ? {} : Object.fromEntries(images.map(image=>[image.id,makeImageCuts(cuts,settings,image)]));
   const pieces = order.length ? layout.slots.map((slot, i) => {
     const image = order[i % order.length];
     // Cycle through a source's complete cut map before reusing its fragments.
-    const mask = maskOrder[Math.floor(i / order.length) % maskOrder.length];
-    return { slot, mask, imageId: image.id, fragmentId: `${image.id}:${mask.index}` };
+    const sourceMasks = imageCuts[image.id]?.masks || maskOrder;
+    const mask = sourceMasks[Math.floor(i / order.length) % sourceMasks.length];
+    return { slot, mask, imageId: image.id, fragmentId: `${image.id}:${mask.id || mask.index}` };
   }) : [];
-  return { settings, cuts, layout, pieces };
+  return { settings, cuts, layout, pieces, imageCuts };
 }
