@@ -82,44 +82,72 @@ try {
     assert.ok(badgeText.some(x=>/\d+ subjects?/i.test(x)),'No subject mask was extracted from real photographs: '+JSON.stringify(badgeDetails));
     assert.doesNotMatch(status,/unavailable for [1-9]/i,'One or more recognition workers failed');
   });
-  await stage('Original subject cuts and Cut map render',async()=>{
+  await stage('Cutting Room previews, selects and transfers individual fragments',async()=>{
+    assert.ok(await page.locator('#cut-room').count(),'The Cutting Room is missing');
     await page.locator('#view-cuts').click();
-    await page.locator('#canvas-info').waitFor();
-    const text=await page.locator('#canvas-info').innerText();
-    record('Cut map: '+text);
-    assert.match(text,/subject outlines|large fragments|bounded source details/i);
-    await saveScreenshot('cut-map');
-    await page.locator('#view-collage').click();
-    const info=await page.locator('#canvas-info').innerText();
-    record('Collage: '+info);
-    assert.match(info,/pieces/);
-    await saveScreenshot('whole-subjects');
+    await page.locator('#cut-room').waitFor({state:'visible'});
+    const sources=page.locator('#cut-source-list .cut-source');
+    assert.equal(await sources.count(),fixtures.length);
+    await page.locator('#cutout-candidates .cutout-card').first().waitFor();
+    await saveScreenshot('cutting-room-source');
+    for(let i=0;i<fixtures.length;i++){
+      await sources.nth(i).click();
+      await page.locator('#cutout-candidates .cutout-card').first().click();
+    }
+    assert.equal(await page.locator('#cutout-selection .cutout-tray-item').count(),fixtures.length);
+    assert.match(await page.locator('#transfer-summary').innerText(),new RegExp(fixtures.length+' scraps'));
+    await saveScreenshot('cutting-room-selected');
+    await page.locator('#transfer-cutouts').click();
+    await page.locator('#cut-room').waitFor({state:'hidden'});
+    await page.waitForFunction(count=>document.querySelector('#canvas-info')?.textContent?.startsWith(count+' pieces'),fixtures.length);
+    record('Transferred selection: '+await page.locator('#canvas-info').innerText());
+    await saveScreenshot('transferred-board');
   });
-  await stage('Partial subjects, re-cut and randomised baseline',async()=>{
+  await stage('Cutting and placing are independent until an explicit transfer',async()=>{
+    const previousInfo=await page.locator('#canvas-info').innerText();
+    const previousPixels=await page.locator('#artwork').evaluate(canvas=>canvas.toDataURL('image/png'));
+    await page.locator('#go-to-cutting').click();
     await page.locator('#whole-subjects').uncheck();
     await page.locator('#cut-size').evaluate(el=>{el.value='65';el.dispatchEvent(new Event('input',{bubbles:true}));});
     const oldCut=await page.locator('#cut-seed').inputValue();
-    const oldLayout=await page.locator('#layout-seed').inputValue();
     await page.locator('#recut').click();
     assert.notEqual(await page.locator('#cut-seed').inputValue(),oldCut);
+    await page.waitForTimeout(350);
+    const unchanged=await page.locator('#artwork').evaluate(canvas=>canvas.toDataURL('image/png'));
+    assert.equal(unchanged,previousPixels,'Cut settings must not silently change previously transferred board pieces');
+    await page.locator('#cutout-candidates .cutout-card').first().click();
+    assert.equal(await page.locator('#cutout-selection .cutout-tray-item').count(),fixtures.length+1);
+    await page.locator('#transfer-cutouts').click();
+    await page.waitForFunction(count=>document.querySelector('#canvas-info')?.textContent?.startsWith(count+' pieces'),fixtures.length+1);
+    const oldLayout=await page.locator('#layout-seed').inputValue();
     await page.locator('#new-baseline').click();
     assert.notEqual(await page.locator('#layout-seed').inputValue(),oldLayout);
-    await saveScreenshot('partial-subjects');
+    record('Board before editing cuts: '+previousInfo+'; now '+await page.locator('#canvas-info').innerText());
+    await saveScreenshot('new-assembly-layout');
   });
-  await stage('Lock two independent layers and inspect their guides',async()=>{
-    await page.locator('#lock-layer').click();
-    await page.waitForFunction(()=>document.querySelectorAll('#layer-list .layer-item').length===2);
-    assert.ok(await page.locator('#orientation').isDisabled(),'Canvas orientation must remain fixed while layers are locked');
-    const firstLayerGuide=page.locator('#layer-list .layer-item').first().getByRole('button',{name:/View layout map/});
-    await firstLayerGuide.click();
+  await stage('Lock starts a fresh cutting room for each successive layer',async()=>{
+    for(let n=1;n<=2;n++){
+      await page.locator('#lock-layer').click();
+      await page.locator('#cut-room').waitFor({state:'visible'});
+      assert.match(await page.locator('#cut-room-subtitle').innerText(),new RegExp('Layer '+(n+1)));
+      assert.equal(await page.locator('#cutout-selection .cutout-tray-item').count(),0,'Next layer must not inherit cutouts');
+      await page.locator('#cutout-candidates .cutout-card').first().click();
+      await page.locator('#transfer-cutouts').click();
+      await page.locator('#cut-room').waitFor({state:'hidden'});
+      await page.waitForFunction(count=>document.querySelectorAll('#layer-list .layer-item').length===count,n+1);
+    }
+    assert.ok(await page.locator('#orientation').isDisabled(),'Canvas orientation must remain fixed after locking');
+    await page.locator('#layer-list .layer-item').first().getByRole('button',{name:/View layout map/}).click();
     assert.match(await page.locator('#layout-guide-name').innerText(),/Layer 1 · locked/);
     await page.locator('#layer-list .layer-item').last().getByRole('button',{name:/View layout map/}).click();
     assert.match(await page.locator('#layout-guide-name').innerText(),/Active layer · editable/);
-    await page.locator('#lock-layer').click();
-    await page.waitForFunction(()=>document.querySelectorAll('#layer-list .layer-item').length===3);
     await page.locator('#view-collage').click();
-    record('Combined locked layer stack: '+(await page.locator('#canvas-info').innerText()));
     assert.match(await page.locator('#canvas-info').innerText(),/3 layers/);
+    record('Layered workbench: '+await page.locator('#canvas-info').innerText());
+    await page.locator('#layer-list .layer-item').first().getByRole('button',{name:/View archived cutting room/}).click();
+    await page.locator('#cut-room').waitFor({state:'visible'});
+    assert.match(await page.locator('#cut-room-title').innerText(),/Archived cuts/);
+    await page.locator('#close-cut-room').click();
     await saveScreenshot('layered-collage');
   });
   await stage('PNG export and portable project round trip',async()=>{
@@ -139,7 +167,8 @@ try {
     const projectDownload=await saveEvent,projectPath=output+'/project.json';
     await projectDownload.saveAs(projectPath);
     const project=JSON.parse(await readFile(projectPath,'utf8'));
-    assert.equal(project.version,3);
+    assert.equal(project.version,4);
+    assert.equal(project.cutouts.length,1,'The active layer transfer tray must survive portable projects');
     assert.equal(project.layers.length,2,'Both frozen layers must be included in the project');
     assert.ok(project.layers.every(layer=>layer.layout?.slots?.length&&layer.pieces?.length),'Each locked layer must retain its layout map and cut geometry');
     assert.equal(project.images.length,fixtures.length);
@@ -157,6 +186,7 @@ try {
     await page.waitForFunction(count=>document.querySelectorAll('#pool .analysis-badge').length===count,fixtures.length,{timeout:30000});
     await page.waitForFunction(()=>document.querySelectorAll('#layer-list .layer-item').length===3);
     record('Round trip retained '+(await page.locator('#layer-list .layer-item').count())+' layer rows');
+    assert.match(await page.locator('#active-cut-count').innerText(),/1 selected scrap/);
   });
   await stage('Responsive mobile collage desk remains usable',async()=>{
     await page.setViewportSize({width:390,height:844});
@@ -174,6 +204,12 @@ try {
     await page.locator('#view-layout').click();
     assert.match(await page.locator('#layout-guide-name').innerText(),/Active layer/);
     await saveScreenshot('collage-desk-mobile');
+    await page.locator('#go-to-cutting').click();
+    await page.locator('#cut-room').waitFor({state:'visible'});
+    const roomWidth=await page.locator('#cut-room').evaluate(room=>({client:room.clientWidth,scroll:room.scrollWidth}));
+    assert.ok(roomWidth.scroll<=roomWidth.client+4,'The mobile cutting room has horizontal overflow: '+JSON.stringify(roomWidth));
+    await saveScreenshot('cutting-room-mobile');
+    await page.locator('#close-cut-room').click();
     await page.setViewportSize({width:1440,height:950});
   });
   record('PASS all live Chrome photo/recognition/cut/export smoke checks');
