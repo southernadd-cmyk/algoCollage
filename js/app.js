@@ -111,7 +111,7 @@ function updateAnalysisStatus() {
     settings.cutStyle==='regions'?'Large fragments keep more of each source image.':
     busy.length?`${busy.length} image${busy.length===1?'':'s'} waiting for subject outlines. ${current?analysisStates.get(current).message:''}`:
     !active.length?'Add images to find their subjects. Large fragments appear first.':
-    `${found.length} of ${active.length} images have subject outlines.${missed.length?' '+missed.length+' use large fragments; select a subject in the Cut map.':''}${failed.length?' Subject tools unavailable for '+failed.length+'; large fragments retained.':''}`;
+    `${found.length} of ${active.length} images have subject outlines.${missed.length?' '+missed.length+' use large fragments; select a subject in the Cut map.':''}${failed.length?' Subject tools unavailable for '+failed.length+'; large fragments retained. '+String(analysisStates.get(failed[0])?.error||'').slice(0,180):''}`;
 }
 function ensureAnalysis() {
   if(hydrating||settings.cutStyle!=='subjects')return;
@@ -163,7 +163,7 @@ function renderPool() {
     const inspect=element('button','inspect-image','Cut map ↗');inspect.setAttribute('aria-label','Inspect cuts for '+image.title);
     inspect.addEventListener('click',()=>{previewImageId=image.id;syncInspector();chooseView($('view-cuts'));$('canvas-panel').scrollIntoView({block:'center',behavior:'smooth'});});
     const state=analysisStates.get(image),summary=state?.busy?state.message:state?.error?'Large fragments · retry available':image.analysis?.subjects.length?image.analysis.subjects.length+' subject'+(image.analysis.subjects.length===1?'':'s'):'Large fragments';
-    const badge=element('span','analysis-badge',summary);badge.title=summary;
+    const badge=element('span','analysis-badge',summary);badge.title=state?.error?'Subject recognition failed: '+state.error:summary;
     const use=element('label');const checkbox=element('input');checkbox.type='checkbox';checkbox.checked=image.enabled!==false;checkbox.setAttribute('aria-label','Use '+image.title+' in collage');
     checkbox.addEventListener('change',()=>{image.enabled=checkbox.checked;poolChanged();});use.append(checkbox,document.createTextNode('Use'));
     card.append(img,remove,title,badge,inspect,use);if(image.sourceUrl)card.append(link('Source ↗',image.sourceUrl,'source-link'));pool.append(card);
