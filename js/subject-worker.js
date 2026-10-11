@@ -1,26 +1,47 @@
 /* Classic worker: MediaPipe's CPU WASM loader uses importScripts. */
-let ready=null,detector,faceDetector,segmenter,helpers;
+let ready=null,detector,faceDetector,segmenter,helpers,edgesTool,visionFiles;
 const root=new URL('../',self.location.href);
 const status=(id,message)=>self.postMessage({id,type:'progress',message});
 async function initialise(id) {
   if(ready)return ready;
   ready=(async()=>{
-    status(id,'Loading subject tools…');
+    status(id,'Loading face and object tools…');
     importScripts(new URL('vendor/vision/vision_bundle.js',root).href);
-    helpers=await import('./subject-data.js');
-    const files=await Vision.FilesetResolver.forVisionTasks(new URL('vendor/vision/wasm',root).href);
+    [helpers,edgesTool]=await Promise.all([import('./subject-data.js'),import('./edge-trace.js')]);
+    visionFiles=await Vision.FilesetResolver.forVisionTasks(new URL('vendor/vision/wasm',root).href);
     const options=file=>({modelAssetPath:new URL('models/'+file,root).href,delegate:'CPU'});
-    detector=await Vision.ObjectDetector.createFromOptions(files,{baseOptions:options('efficientdet-lite0.tflite'),runningMode:'IMAGE',scoreThreshold:.42,maxResults:6});
-    faceDetector=await Vision.FaceDetector.createFromOptions(files,{baseOptions:options('blaze-face-short-range.tflite'),runningMode:'IMAGE',minDetectionConfidence:.5});
-    segmenter=await Vision.InteractiveSegmenter.createFromOptions(files,{baseOptions:options('magic-touch-v2.task')});
+    detector=await Vision.ObjectDetector.createFromOptions(visionFiles,{baseOptions:options('efficientdet-lite0.tflite'),runningMode:'IMAGE',scoreThreshold:.47,maxResults:8});
+    // A lower *face detection* threshold allows drawn/painted portraits. The
+    // much stricter extraction bounds below prevent background over-selection.
+    faceDetector=await Vision.FaceDetector.createFromOptions(visionFiles,{baseOptions:options('blaze-face-short-range.tflite'),runningMode:'IMAGE',minDetectionConfidence:.4});
   })();
   return ready;
+}
+async function getSegmenter() {
+  if(!segmenter)segmenter=await Vision.InteractiveSegmenter.createFromOptions(visionFiles,{
+    baseOptions:{modelAssetPath:new URL('models/magic-touch-v2.task',root).href,delegate:'CPU'}
+  });
+  return segmenter;
 }
 function normalBounds(detection,w,h) {
   const b=detection.boundingBox;if(!b)return null;
   const {clamp}=helpers,x=clamp(b.originX/w),y=clamp(b.originY/h);
   const right=clamp((b.originX+b.width)/w),bottom=clamp((b.originY+b.height)/h);
   return right>x&&bottom>y?{x,y,w:right-x,h:bottom-y}:null;
+}
+function boundedConfidence(raw,width,height,b) {
+  const result=new Float32Array(raw.length);
+  const px=Math.min(.035,b.w*.12),py=Math.min(.035,b.h*.12);
+  const x0=Math.max(0,Math.floor((b.x-px)*width)),x1=Math.min(width,Math.ceil((b.x+b.w+px)*width));
+  const y0=Math.max(0,Math.floor((b.y-py)*height)),y1=Math.min(height,Math.ceil((b.y+b.h+py)*height));
+  let selected=0;
+  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++) {
+    const i=y*width+x,value=raw[i];
+    if(value>=.72){result[i]=value;selected++;}
+  }
+  // When MagicTouch simply fills a detector box, it has not found an outline.
+  if(selected/Math.max(1,(x1-x0)*(y1-y0))>.88)return null;
+  return result;
 }
 async function analyse(job) {
   await initialise(job.id);
@@ -30,37 +51,38 @@ async function analyse(job) {
     const width=Math.max(1,Math.round(bitmap.width*ratio)),height=Math.max(1,Math.round(bitmap.height*ratio));
     const canvas=new OffscreenCanvas(width,height),ctx=canvas.getContext('2d',{willReadFrequently:true});
     ctx.drawImage(bitmap,0,0,width,height);
-    status(job.id,'Finding objects and faces…');
-    const objects=detector.detect(canvas).detections.map(d=>({bounds:normalBounds(d,width,height),label:d.categories[0]?.categoryName||'Object',score:d.categories[0]?.score||0})).filter(d=>d.bounds);
+    status(job.id,'Locating faces and individual objects…');
+    const objects=detector.detect(canvas).detections.map(d=>({
+      bounds:normalBounds(d,width,height),label:d.categories[0]?.categoryName||'Object',score:d.categories[0]?.score||0
+    })).filter(d=>d.bounds);
     const faces=faceDetector.detect(canvas).detections.map(d=>normalBounds(d,width,height)).filter(Boolean).slice(0,12);
-    let candidates;
-    if(job.point)candidates=[{point:job.point,label:'Selected subject',score:0,manual:true}];
-    else {
-      candidates=objects.slice(0,4).map(o=>({point:{x:o.bounds.x+o.bounds.w/2,y:o.bounds.y+o.bounds.h*(o.label==='person'?.38:.5)},label:o.label,score:o.score}));
-      for(const face of faces)if(!objects.some(o=>helpers.overlap(o.bounds,face)>face.w*face.h*.7)) {
-        candidates.push({point:{x:face.x+face.w/2,y:face.y+face.h/2},label:'Face / head',score:.5});
-      }
-      // Guide-centred queries also retrieve subjects outside the detector's vocabulary.
-      const guides=(job.regions||[]).slice().sort((a,b)=>b.w*b.h-a.w*a.h);
-      for(const region of guides) {
-        if(candidates.length>=6)break;
-        const point={x:helpers.clamp(region.x+region.w/2,.04,.96),y:helpers.clamp(region.y+region.h/2,.04,.96)};
-        if(!candidates.some(c=>Math.hypot(c.point.x-point.x,c.point.y-point.y)<.15))candidates.push({point,label:'Guide-selected subject',score:0});
-      }
-      if(!candidates.length)candidates.push({point:{x:.5,y:.5},label:'Guide-selected subject',score:0});
-      candidates=candidates.slice(0,6);
-    }
-    status(job.id,'Tracing subject outlines…');
-    segmenter.setImage(canvas);
+    const candidates=edgesTool.chooseCandidates(objects,faces,job.point);
     const subjects=[];
+    if(!candidates.length)return {version:helpers.ANALYSIS_VERSION,model:helpers.ANALYSIS_MODEL,subjects,faces};
+
+    status(job.id,'Following local contours and edges…');
+    const edges=edgesTool.sobelEdges(ctx.getImageData(0,0,width,height).data,width,height);
     for(const candidate of candidates) {
-      const mask=segmenter.segment([{brushMode:1 /* MediaPipe BrushMode.POSITIVE: numeric wire value (not UMD-exported) */,point:[candidate.point],isCompleted:true}]);
-      try {
-        const subject=helpers.subjectFromConfidence(mask.getAsFloat32Array(),mask.width,mask.height,candidate.point,candidate);
-        if(subject&&!subjects.some(s=>helpers.duplicateSubject(s,subject)))subjects.push(subject);
-      }finally {mask.close();}
+      // A detected face is always a compact, edge-guided head detail, never
+      // the full "person" mask or the painted background.
+      let confidence=null,cw=width,ch=height;
+      if(candidate.kind==='object') {
+        const tool=await getSegmenter();
+        tool.setImage(canvas);
+        const mask=tool.segment([{brushMode:Vision.BrushMode.POSITIVE,point:[candidate.point],isCompleted:true}]);
+        try {
+          cw=mask.width;ch=mask.height;
+          confidence=boundedConfidence(mask.getAsFloat32Array(),cw,ch,candidate.bounds);
+        }finally {mask.close();}
+      }
+      if(!confidence) {
+        confidence=edgesTool.traceEdgeMask(edges,width,height,candidate.bounds,{kind:candidate.kind});
+        cw=width;ch=height;
+      }
+      const subject=helpers.subjectFromConfidence(confidence,cw,ch,candidate.point,candidate);
+      if(subject&&!subjects.some(s=>helpers.duplicateSubject(s,subject)))subjects.push(subject);
     }
-    return {version:helpers.ANALYSIS_VERSION,model:helpers.ANALYSIS_MODEL,subjects,faces};
+    return {version:helpers.ANALYSIS_VERSION,model:helpers.ANALYSIS_MODEL,subjects:subjects.slice(0,8),faces};
   }finally {bitmap.close();}
 }
 let queue=Promise.resolve();
