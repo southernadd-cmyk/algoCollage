@@ -132,13 +132,16 @@ export function makeImageCuts(cuts,settings,image) {
     });
     return {width,height,masks,regions,kind:'subjects'};
   }
-  // Keep most of the original photograph. The engine determines the centres
-  // and ordering of these large windows; source images are never pre-cropped.
+  // Do not disguise a missed detection as a whole-subject extraction.
+  // In subject mode the fallback is a bounded detail (about 21% of the
+  // photograph at the default setting); explicit Regions retains wide crops.
+  const bounded=settings.cutStyle==='subjects';
+  const coverage=bounded?.26+settings.cutSize/400:.45+settings.cutSize/200;
   const largest=regions.slice().sort((a,b)=>b.w*b.h-a.w*a.h).slice(0,8);
   const masks=largest.map((region,index)=>{
-    const bounds=toPixels(windowIn({x:0,y:0,w:1,h:1},region,.45+settings.cutSize/200),width,height);
+    const bounds=toPixels(windowIn({x:0,y:0,w:1,h:1},region,coverage),width,height);
     return {index,id:key+':region-'+region.index,bounds,points:settings.cutMode==='rects'?rectangle(bounds):bevel(bounds,.06),
-      sourceWidth:width,sourceHeight:height,kind:'region',label:'Large image fragment',guideIndex:region.index};
+      sourceWidth:width,sourceHeight:height,kind:'region',label:bounded?'Unrecognised image detail':'Large image fragment',guideIndex:region.index};
   });
-  return {width,height,masks,regions,kind:'regions'};
+  return {width,height,masks,regions,kind:bounded?'details':'regions'};
 }
