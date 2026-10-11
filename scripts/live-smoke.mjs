@@ -223,8 +223,13 @@ try {
     await page.waitForFunction(count=>document.querySelectorAll('#pool .analysis-badge').length===count,fixtures.length,{timeout:30000});
     await page.waitForFunction(()=>document.querySelectorAll('#layer-list .layer-item').length===3);
     record('Round trip retained '+(await page.locator('#layer-list .layer-item').count())+' layer rows');
-    assert.match(await page.locator('#canvas-info').innerText(),/1 pieces across 3 layers/,
-      'Restored project must retain its one active transferred cutout plus two frozen layers');
+    assert.match(await page.locator('#canvas-info').innerText(),/3 pieces across 3 layers/,
+      'Restored project must include all three independently placed pieces');
+    await page.locator('#go-to-cutting').click();
+    await page.locator('#cut-room').waitFor({state:'visible'});
+    assert.equal(await page.locator('#cutout-selection .cutout-tray-item').count(),1,
+      'Restored active layer must retain its exact one-cutout selection tray');
+    await page.locator('#close-cut-room').click();
   });
   await stage('Responsive mobile collage desk remains usable',async()=>{
     await page.setViewportSize({width:390,height:844});
