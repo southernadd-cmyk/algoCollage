@@ -59,3 +59,14 @@ The baseline UI no longer exposes an assembly-layout dropdown: **New baseline** 
 Up to 12 locked layers are retained in IndexedDB alongside the source pool; export/import uses v3 portable projects, with v1/v2 compatible. While there are locked layers, orientation changes are unavailable and image removal is guarded if a locked piece still references that source. Removed locked layers do not alter other snapshots.
 
 Unit tests validate dispersion ranking, deterministic candidate selection, two independent layout guides, frozen piece geometry, snapshot removal and malicious/incompatible project rejection. The live browser smoke test was extended to lock two layers, inspect their maps and verify a v3 save/reopen. These checks prove the workflow functions; they do not certify an artistic judgement that the chosen guide is always the most attractive.
+
+## Cut → Transfer → Assemble — 0.5
+
+Each layer now has its own **Cutting Room** (open from the workbench, left-hand controls, or a layer's **Edit cuts** button). Select a source photograph, inspect its actual AI/ALGO/ART outlines, use **Pick a subject** to rescue a missed form, and click individual cutout thumbnails to add or remove them from a tray. The cutting engine's settings, re-cut button, and region detail have moved into this full-screen working space. **Nothing moves to the collage board until you click Transfer selected scraps to board.**
+
+The **Assembly Board** is a separate stage: the transferred cutouts are placed **once each**, with no automatic repeating of images to fill spare composition-guide positions. New baseline rearranges the transferred material without re-cutting it; Shuffle scraps rearranges which cutout occupies each slot. A guide needs enough slots to place every selected scrap; the transfer action samples a roomier ALGO/ART guide if necessary. The current selection can be revisited and replaced in its own Cutting Room.
+
+**Lock layer + another** freezes those selected cuts and placements, adds the result to the collage, and opens an **empty Cutting Room** for the next layer. Locked layers expose a read-only **View cuts** record plus their own placement map. The project file is now **v4**, saving the active cutout tray alongside the images and locked layers. v1–v3 projects still open; their pre-existing automatically generated active composition is migrated into a cutout tray on first opening. IndexedDB preserves the current cutouts between sessions.
+
+The earlier browser-wide auto-fill path still exists internally for compatibility, but the new creative workflow uses only explicitly transferred fragments.
+

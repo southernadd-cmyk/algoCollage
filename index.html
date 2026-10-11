@@ -9,6 +9,7 @@
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/cut-paste.css">
+  <link rel="stylesheet" href="css/cutting-room.css">
   <script defer src="vendor/algoart/random.js"></script>
   <script defer src="vendor/algoart/phi.js"></script>
   <script defer src="vendor/algoart/palettes.js"></script>
@@ -47,21 +48,18 @@
     <section class="composition-section">
       <div class="section-heading"><span class="step">02 / CUT</span><h2>Get the<br><i>scissors.</i></h2></div>
       <p class="intro">The ALGO/ART engine finds the rhythm. You decide what to keep and where to layer it.</p>
-      <label for="cut-style">Cutting method</label><select id="cut-style"><option value="subjects">Objects &amp; faces</option><option value="regions">Large image fragments</option><option value="geometric">Original geometric cuts</option></select>
-      <div class="cut-options">
-        <div class="range-field"><label for="cut-size">Source coverage <output id="cutSize-value" for="cut-size">80</output></label><input id="cut-size" type="range" min="35" max="100" value="80"></div>
-        <label class="subject-check"><input id="whole-subjects" type="checkbox" checked> Keep whole subjects</label>
-        <p id="cutting-status" class="small-note" role="status">Add images to find their subjects. Smaller source details appear first.</p>
-        <button id="find-subjects" class="wide" disabled>Find subjects again ↻</button>
-        <p class="small-note">Recognition runs on your device. Face outlines take priority. If a painting is missed, pick the face directly in the Cut map; broad image windows belong to Large image fragments.</p>
+      <div class="cut-cta">
+        <span class="eyebrow">01 — CUTTING ROOM</span>
+        <p id="active-cut-count" role="status">This layer has no pieces on the board yet.</p>
+        <button id="open-cut-room" class="primary wide" type="button">✂ Open cutting room ↗</button>
+        <p class="small-note">First choose and cut individual scraps. Then transfer them to the assembly board. The next layer gets a fresh cutting room.</p>
       </div>
-      <div class="paired engine-choices"><div><label for="cut-mode">Selection regions</label><select id="cut-mode"><option value="geometric">Constructed forms</option><option value="rects">Recursive divisions</option><option value="field">Orbital shapes</option></select></div><div><span class="small-note">Current baseline family</span><p id="baseline-kind" class="baseline-kind">Orbital studies</p></div></div>
-      <div class="seed-row"><label for="cut-seed">Cut seed</label><input id="cut-seed" maxlength="80"><button id="recut" title="Make new cuts; keep the assembly seed">Re-cut ↻</button></div>
+      <div class="paired engine-choices"><div><span class="small-note">Assembly baseline</span><p id="baseline-kind" class="baseline-kind">Orbital studies</p></div></div>
       <div class="seed-row"><label for="layout-seed">Current layout ID</label><input id="layout-seed" maxlength="80"></div>
       <p id="baseline-note" class="small-note" role="status">Infinite variations, one collage at a time. Try a new baseline at the workbench.</p>
       <details open><summary>Composition &amp; paper <span>＋</span></summary>
         <div class="range-field"><label for="pieces">Maximum pieces <output id="pieces-value" for="pieces">12</output></label><input id="pieces" type="range" min="6" max="48" value="12"></div>
-        <div class="range-field"><label for="detail">Region detail <output id="detail-value" for="detail">18</output></label><input id="detail" type="range" min="8" max="60" value="18"></div>
+        
         <div class="range-field"><label for="negative-space">Quiet space <output id="negativeSpace-value" for="negative-space">35</output></label><input id="negative-space" type="range" min="0" max="90" value="35"></div>
         <div class="range-field"><label for="scale">Piece scale <output id="scale-value" for="scale">185</output></label><input id="scale" type="range" min="60" max="230" value="185"></div>
         <div class="range-field"><label for="rotation">Rotation <output id="rotation-value" for="rotation">14</output></label><input id="rotation" type="range" min="0" max="60" value="14"></div>
@@ -77,18 +75,18 @@
       <div class="workbench-seal" aria-hidden="true"><span>HAND<br>ASSEMBLED*</span><small>* MORE OR LESS</small></div>
     </div>
     <div class="workbench-actions" aria-label="Build your composition">
-      <div class="action-intro"><strong>COMPOSITION TOOLS</strong><span>Try it. Like it. Lock it. Keep going.</span></div>
+      <div class="action-intro"><strong>02 / ASSEMBLY BOARD</strong><span>Pieces arrive here from the Cutting Room.</span></div>
+      <button id="go-to-cutting" class="action-shuffle" type="button">✂ Edit cutouts</button>
       <button id="new-baseline" class="action-baseline" title="Try nine ALGO/ART variants and use a well-spread composition"><span aria-hidden="true">↻</span> New baseline</button>
       <button id="lock-layer" class="action-lock" disabled><span aria-hidden="true">▧</span> Lock layer + another</button>
-      <button id="shuffle-images" class="action-shuffle" title="Reshuffle source images without changing layout">Shuffle scraps ⇄</button>
+      <button id="shuffle-images" class="action-shuffle" title="Shuffle the transferred pieces without changing the layout">Shuffle transferred scraps ⇄</button>
     </div>
     <div class="artboard-layout">
     <div class="stage-area">
-    <div class="canvas-bar"><div class="view-tabs" role="tablist" aria-label="Canvas view"><button id="view-collage" role="tab" aria-selected="true" aria-controls="canvas-panel" data-view="collage">Collage</button><button id="view-cuts" role="tab" aria-selected="false" tabindex="-1" aria-controls="canvas-panel" data-view="cuts">Cut map</button><button id="view-layout" role="tab" aria-selected="false" tabindex="-1" aria-controls="canvas-panel" data-view="layout">Layout map</button></div><button id="export" class="export-button" disabled>Export PNG ↓</button></div>
+    <div class="canvas-bar"><div class="view-tabs" role="tablist" aria-label="Canvas view"><button id="view-collage" role="tab" aria-selected="true" aria-controls="canvas-panel" data-view="collage">Collage</button><button id="view-cuts" type="button">Cutting room ✂</button><button id="view-layout" role="tab" aria-selected="false" tabindex="-1" aria-controls="canvas-panel" data-view="layout">Layout map</button></div><button id="export" class="export-button" disabled>Export PNG ↓</button></div>
     <div id="layout-inspector" class="layout-inspector" hidden><span id="layout-guide-name">Active layer guide</span><span id="layout-guide-meta"></span></div>
-    <div id="cut-inspector" class="cut-inspector" hidden><label for="cut-preview-image">Inspect image</label><select id="cut-preview-image"></select><button id="pick-subject" aria-pressed="false">Pick a subject</button><p id="pick-help" class="small-note">Dashed lines are ALGO/ART regions. Bright areas are the pieces retained.</p></div>
     <div id="canvas-panel" class="canvas-panel" role="tabpanel" aria-labelledby="view-collage">
-      <div class="paper-wrap"><canvas id="artwork" width="1000" height="1400" role="img" aria-label="Collage canvas"></canvas><div id="empty-canvas" class="empty-canvas"><span class="empty-symbol" aria-hidden="true">φ</span><h2>The composition is ready.<br>Bring the images.</h2><p>Search for a subject or upload your own pictures.<br>Keep a few in the pool to make your first collage.</p><button id="empty-upload">＋ Add images</button></div></div>
+      <div class="paper-wrap"><canvas id="artwork" width="1000" height="1400" role="img" aria-label="Collage canvas"></canvas><div id="empty-canvas" class="empty-canvas"><span class="empty-symbol" aria-hidden="true">φ</span><h2>Your board is waiting.<br>Cut some pieces.</h2><p>Collect some source images, open the Cutting Room, and transfer the fragments you want onto this board.</p><button id="empty-upload">＋ Add images</button><button id="empty-cut-room" type="button">✂ Open cutting room</button></div></div>
     </div>
     <div class="canvas-caption"><p id="canvas-info">A composition waiting for material.</p><button id="credits-button" disabled>Source credits ↗</button></div>
     </div>
@@ -109,11 +107,59 @@
       <div id="pool" class="pool"><div class="pool-placeholder"><span>＋</span><p>Your material lives here.<br>Search results join the pool when you choose <strong>Add</strong>.</p></div></div>
       <p id="storage-status" class="small-note" role="status"></p>
     </section>
-    <footer class="studio-footer"><span>COLLECT THE WORLD. CUT IT UP. MAKE SOMETHING ELSE.</span><span>ALGO/COLLAGE · THE EXPERIMENT CONTINUES ↗</span></footer>
+    <footer class="studio-footer"><span>COLLECT THE WORLD. CUT IT UP. MAKE SOMETHING ELSE.</span><span>ALGO/COLLAGE · CUT → TRANSFER → PLACE ↗</span></footer>
   </section>
 </main>
 <input id="upload-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" multiple hidden>
 <input id="project-input" type="file" accept=".json,application/json" hidden>
+<dialog id="cut-room" class="cut-room" aria-labelledby="cut-room-title">
+  <div class="cut-room-head">
+    <div><span class="eyebrow">STEP 01 / THE CUTTING ROOM</span><h2 id="cut-room-title">Cut first. <em>Place later.</em></h2><p id="cut-room-subtitle">Layer 1 · prepare the scraps you want to transfer to the board.</p></div>
+    <button id="close-cut-room" type="button" aria-label="Close the cutting room">✕ Close</button>
+  </div>
+  <div class="workflow-steps" aria-label="Collage workflow"><span class="active">01 / CUT &amp; SELECT</span><span>→</span><span>02 / TRANSFER</span><span>→</span><span>03 / ARRANGE &amp; LOCK</span></div>
+  <div class="cut-room-body">
+    <aside class="cut-room-tools">
+      <div class="cut-room-toolhead"><span class="eyebrow">CUTTING SETTINGS</span><p>Cut the source, not the composition.</p></div>
+            <label for="cut-style">Cutting method</label><select id="cut-style"><option value="subjects">Objects &amp; faces</option><option value="regions">Large image fragments</option><option value="geometric">Original geometric cuts</option></select>
+      <div class="cut-options">
+        <div class="range-field"><label for="cut-size">Source coverage <output id="cutSize-value" for="cut-size">80</output></label><input id="cut-size" type="range" min="35" max="100" value="80"></div>
+        <label class="subject-check"><input id="whole-subjects" type="checkbox" checked> Keep whole subjects</label>
+        <p id="cutting-status" class="small-note" role="status">Add images to find their subjects. Smaller source details appear first.</p>
+        <button id="find-subjects" class="wide" disabled>Find subjects again ↻</button>
+        <p class="small-note">Recognition runs on your device. Face outlines take priority. If a painting is missed, pick the face directly in the Cut map; broad image windows belong to Large image fragments.</p>
+      </div>
+      <div class="paired engine-choices"><div><label for="cut-mode">Selection regions</label><select id="cut-mode"><option value="geometric">Constructed forms</option><option value="rects">Recursive divisions</option><option value="field">Orbital shapes</option></select></div></div>
+      <div class="seed-row"><label for="cut-seed">Cut seed</label><input id="cut-seed" maxlength="80"><button id="recut" title="Make new cuts; keep the assembly seed">Re-cut ↻</button></div>
+
+      <div class="range-field"><label for="detail">Region detail <output id="detail-value" for="detail">18</output></label><input id="detail" type="range" min="8" max="60" value="18"></div>
+      <button id="cut-upload" type="button">＋ Add another source</button>
+      <button id="cut-find-more" type="button">↖ Back to image search</button>
+    </aside>
+    <section class="cut-room-preview" aria-label="Inspect cutting outlines">
+      <div class="cut-room-section-head"><span class="eyebrow">SOURCE / OUTLINES</span><span id="cut-room-count"></span></div>
+      <div id="cut-source-list" class="cut-source-list" aria-label="Select a source photograph"></div>
+          <div id="cut-inspector" class="cut-inspector" hidden><label for="cut-preview-image">Inspect image</label><select id="cut-preview-image"></select><button id="pick-subject" aria-pressed="false">Pick a subject</button><p id="pick-help" class="small-note">Dashed lines are ALGO/ART regions. Bright areas are the pieces retained.</p></div>
+
+      <div class="cut-map-mat"><canvas id="cut-workspace-canvas" width="1000" height="1400" role="img" aria-label="Cutting preview of source photograph"></canvas></div>
+      <p class="small-note">These outlines are the actual cutouts. Use <strong>Pick a subject</strong> to trace a missed object on the photograph.</p>
+    </section>
+    <aside class="cut-room-tray">
+      <div class="cut-room-section-head"><span class="eyebrow">CHOOSE YOUR CUTOUTS</span><span id="candidate-count">0 found</span></div>
+      <p class="small-note">Click individual scraps to add or remove them from this layer.</p>
+      <div id="cutout-candidates" class="cutout-candidates" aria-label="Available cutouts"></div>
+      <div class="selected-scraps">
+        <h3>Ready to transfer <span id="selection-count">0</span></h3>
+        <div id="cutout-selection" class="cutout-selection" aria-label="Selected scraps"></div>
+      </div>
+    </aside>
+  </div>
+  <div class="cut-room-footer">
+    <div><strong id="transfer-summary">0 scraps ready</strong><p id="transfer-help" class="small-note" role="status">Select at least one cutout to place on your board.</p></div>
+    <button id="transfer-cutouts" class="primary" type="button" disabled>Transfer selected scraps to board →</button>
+  </div>
+  <input id="cut-upload-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" multiple hidden>
+</dialog>
 <dialog id="credits-dialog"><div class="dialog-heading"><h2>Source credits</h2><button id="close-credits" aria-label="Close source credits">×</button></div><p>Credits for images used in this composition. The images have been cut, cropped and rearranged.</p><div id="credits-list"></div><button id="download-credits" class="primary">Download credits ↓</button></dialog>
 <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
 <noscript><p class="no-script">Algo Collage needs JavaScript enabled to compose images.</p></noscript>

@@ -2,7 +2,8 @@ import { sanitiseSettings, makeCuts, makeLayout, makeScene } from './composition
 import { searchImages, fetchImage, MAX_IMAGES, MAX_IMAGE_BYTES, MAX_PROJECT_BYTES, RASTER_TYPES, creditsText } from './sources.js';
 import { readWorkspace, writeWorkspace, readSettings, writeSettings, projectDocument, validateProject } from './storage.js';
 import { MAX_LOCKED_LAYERS, pickSpreadBaseline, captureLayer, combineLayers, guideForLayer, referencedLayerImages, validateLockedLayers } from './layer-stack.js';
-import { renderCollage, renderCutMap, renderLayoutMap } from './render.js';
+import { renderCollage, renderCutMap, renderLayoutMap, fragmentCanvas } from './render.js';
+import { MAX_CUTOUTS, cutoutFromMask, placeCutouts, validateCutouts } from './layer-workflow.js';
 import { pngWithCredits } from './png.js';
 import { SubjectAnalyser } from './analysis.js';
 import { guideRegions } from './image-cuts.js';
@@ -14,6 +15,7 @@ const A=window.AlgoArt;
 let settings=readSettings(), images=[], scene=null, view='collage';
 let cuts=null, layout=null, cutKey='', layoutKey='', fragmentCache=new Map();
 let currentScene=null,lockedLayers=[],previewLayerId='current';
+let activeCutouts=[],stagedCutouts=[],archivedCutLayer=null,legacyCutoutMigration=false;
 let searchController=null, searchSerial=0, searchState=null, searchResults=[], adding=new Set();
 let persistQueue=Promise.resolve(), frame=null, noticeTimer=null, hydrating=true;
 const analyser=new SubjectAnalyser(),analysisStates=new Map();
@@ -38,8 +40,8 @@ function rememberSettings() {
   try {writeSettings(settings);}catch {$('storage-status').textContent='Settings could not be saved in this browser. Save a project file to keep them.';}
 }
 function persist() {
-  const snapshot=images.slice(),layerSnapshot=lockedLayers.slice();
-  persistQueue=persistQueue.catch(()=>{}).then(()=>writeWorkspace(snapshot,layerSnapshot)).then(()=>{
+  const snapshot=images.slice(),layerSnapshot=lockedLayers.slice(),activeSnapshot=activeCutouts.slice();
+  persistQueue=persistQueue.catch(()=>{}).then(()=>writeWorkspace(snapshot,layerSnapshot,activeSnapshot)).then(()=>{
     $('storage-status').textContent='Pool saved in this browser. Save a project for a portable copy.';
     $('storage-status').classList.remove('error');
   }).catch(()=>{
@@ -72,7 +74,16 @@ function rebuild() {
       const nextLayoutKey=JSON.stringify([settings.layoutMode,settings.layoutSeed,settings.pieces,settings.orientation,settings.negativeSpace,settings.rotation]);
       if(nextCutKey!==cutKey) {cuts=makeCuts(A,settings);cutKey=nextCutKey;fragmentCache.clear();}
       if(nextLayoutKey!==layoutKey) {layout=makeLayout(A,settings);layoutKey=nextLayoutKey;}
-      currentScene=makeScene(A,settings,images,cuts,layout);
+      const rawScene=makeScene(A,settings,images,cuts,layout);
+      if(legacyCutoutMigration&&images.length) {
+        activeCutouts=rawScene.pieces.map((piece,index)=>({
+          ...cutoutFromMask(images.find(i=>i.id===piece.imageId),piece.mask,rawScene.cuts),
+          key:'legacy:'+index+':'+piece.imageId
+        }));
+        legacyCutoutMigration=false;
+        void persist();
+      }
+      currentScene=placeCutouts(rawScene,activeCutouts);
       scene=combineLayers(currentScene,lockedLayers);
       renderLayerList();draw();ensureAnalysis();
     } catch(error) {notice('The composition could not be created: '+error.message,true);}
@@ -82,8 +93,7 @@ function draw() {
   if(!scene)return;
   const canvas=$('artwork'), active=images.filter(i=>i.enabled!==false);
   const guide=guideForLayer(currentScene,lockedLayers,previewLayerId);
-  if(view==='cuts')renderCutMap(canvas,currentScene,images,{scale:0.7,imageId:previewImageId});
-  else if(view==='layout')renderLayoutMap(canvas,guide,{scale:0.7});
+  if(view==='layout')renderLayoutMap(canvas,guide,{scale:0.7});
   else renderCollage(canvas,scene,images,{scale:1,cache:fragmentCache});
   $('empty-canvas').hidden=scene.pieces.length>0 || view!=='collage';
   $('export').disabled=scene.pieces.length===0;
@@ -93,19 +103,142 @@ function draw() {
   $('layout-inspector').hidden=view!=='layout';
   $('layout-guide-name').textContent=selectedGuide?selectedGuide.name+' · locked':'Active layer · editable';
   $('layout-guide-meta').textContent=guide.layout.strategy+' · '+guide.layout.slots.length+' positions';
-  canvas.setAttribute('aria-label',view==='cuts' ? 'Cut map: '+(source?.masks.length||cuts.masks.length)+' '+(source?.kind||'geometric')+' cuts'+(inspected?' from '+inspected.title:'') :
-    view==='layout' ? 'Layout map for '+(selectedGuide?.name||'active layer')+': '+guide.layout.slots.length+' positions from '+guide.layout.strategy :
-    'Collage of '+scene.pieces.length+' fragments from '+active.length+' active images');
+  canvas.setAttribute('aria-label',view==='layout' ? 'Layout map for '+(selectedGuide?.name||'active layer')+': '+guide.layout.slots.length+' positions from '+guide.layout.strategy :
+    'Collage of '+scene.pieces.length+' fragments across '+(lockedLayers.length+1)+' layers');
   const subjectCount=scene.pieces.filter(p=>p.mask.kind==='subject').length;
-  $('canvas-info').textContent=view==='cuts' ? source ? `${source.masks.length} ${source.kind==='subjects'?'subject outlines':source.kind==='details'?'bounded source details':'large fragments'} · ${source.width} × ${source.height} source · guided by ${cuts.strategy}` : `${cuts.masks.length} geometric cut shapes · ${cuts.strategy}` :
-    view==='layout' ? `${selectedGuide?.name||'Active layer'} · ${guide.layout.slots.length} positions · ${guide.layout.strategy} · ${guide.layout.width} × ${guide.layout.height}` :
+  $('canvas-info').textContent=view==='layout' ? `${selectedGuide?.name||'Active layer'} · ${guide.layout.slots.length} positions · ${guide.layout.strategy} · ${guide.layout.width} × ${guide.layout.height}` :
     `${scene.pieces.length} pieces across ${lockedLayers.length+1} layer${lockedLayers.length?'s':''}${subjectCount?' · '+subjectCount+' subject cuts':''} · ${new Set(scene.pieces.map(p=>p.imageId)).size} images used · ${layout.width} × ${layout.height}`;
-  $('cut-inspector').hidden=view!=='cuts'||!images.length;
   $('pick-subject').disabled=settings.cutStyle!=='subjects'||!inspected||analysisStates.get(inspected)?.busy===true;
   $('lock-layer').disabled=!currentScene.pieces.length||lockedLayers.length>=MAX_LOCKED_LAYERS;
-  canvas.classList.toggle('picking',picking&&view==='cuts');
+  $('active-cut-count').textContent=activeCutouts.length
+    ? activeCutouts.length+' selected scrap'+(activeCutouts.length===1?'':'s')+' transferred to the assembly board.'
+    : 'No cutouts transferred. Open the Cutting Room to prepare this layer.';
+  if($('cut-room').open)renderCutRoom();
 }
 function poolChanged() {fragmentCache.clear();renderPool();renderResults();syncInspector();updateAnalysisStatus();rebuild();void persist();}
+function sourceMasks(image) {
+  return (currentScene?.imageCuts?.[image.id]?.masks||cuts?.masks||[]);
+}
+function openCutRoom(layerId='current') {
+  archivedCutLayer=layerId==='current'?null:lockedLayers.find(layer=>layer.id===layerId)||null;
+  if(layerId!=='current'&&!archivedCutLayer)return;
+  if(!archivedCutLayer&&!stagedCutouts.length&&activeCutouts.length)stagedCutouts=activeCutouts.slice();
+  const allowed=archivedCutLayer?archivedCutLayer.pieces.map(piece=>piece.imageId):images.map(i=>i.id);
+  if(!allowed.includes(previewImageId))previewImageId=allowed[0]||null;
+  syncInspector();
+  $('cut-room').showModal();
+  renderCutRoom();
+  $('close-cut-room').focus();
+}
+function closeCutRoom() {
+  picking=false;$('pick-subject').setAttribute('aria-pressed','false');
+  $('cut-room').close();archivedCutLayer=null;
+}
+function thumbnail(canvas,image,mask,width,height) {
+  canvas.width=140;canvas.height=113;
+  const ctx=canvas.getContext('2d'),tile=16;
+  for(let y=0;y<canvas.height;y+=tile)for(let x=0;x<canvas.width;x+=tile){
+    ctx.fillStyle=(Math.floor(x/tile)+Math.floor(y/tile))%2?'#d3c8b1':'#f2ebdc';ctx.fillRect(x,y,tile,tile);
+  }
+  try{
+    const extracted=fragmentCanvas({mask,layerCuts:{width,height}},{width,height},image);
+    const scale=Math.min(130/extracted.width,103/extracted.height,3);
+    if(Number.isFinite(scale)&&scale>0)ctx.drawImage(extracted,(canvas.width-extracted.width*scale)/2,
+      (canvas.height-extracted.height*scale)/2,extracted.width*scale,extracted.height*scale);
+  }catch{/* Keep the checkerboard and textual label if a mask is no longer drawable. */}
+}
+function renderCutRoom() {
+  if(!$('cut-room').open||!currentScene)return;
+  const archive=archivedCutLayer,available=archive
+    ?images.filter(image=>archive.pieces.some(p=>p.imageId===image.id))
+    :images;
+  $('cut-room').classList.toggle('archive',!!archive);
+  $('cut-room-title').innerHTML=archive?'Archived <em>cuts.</em>':'Cut first. <em>Place later.</em>';
+  $('cut-room-subtitle').textContent=archive?archive.name+' · frozen cutouts, inspect only.':
+    'Layer '+(lockedLayers.length+1)+' · select the scraps to transfer to the assembly board.';
+  const list=$('cut-source-list');list.replaceChildren();
+  if(!available.some(i=>i.id===previewImageId))previewImageId=available[0]?.id||null;
+  for(const image of available) {
+    const button=element('button','cut-source'+(previewImageId===image.id?' selected':''));
+    button.type='button';button.setAttribute('aria-pressed',String(previewImageId===image.id));
+    const img=element('img');img.src=image.objectURL;img.alt='';
+    button.append(img,element('span',null,image.title));button.title=image.title;
+    button.addEventListener('click',()=>{previewImageId=image.id;syncInspector();renderCutRoom();});
+    list.append(button);
+  }
+  $('cut-inspector').hidden=!available.length;
+  const selected=available.find(i=>i.id===previewImageId),masks=selected
+    ?archive?archive.pieces.filter(piece=>piece.imageId===selected.id).map(piece=>piece.mask):sourceMasks(selected):[];
+  const sourceScene=archive?{settings, cuts:{width:archive.cuts.width,height:archive.cuts.height,masks:[]},
+    imageCuts:Object.fromEntries(available.map(img=>[img.id,{width:img.element.naturalWidth,height:img.element.naturalHeight,
+      masks:archive.pieces.filter(piece=>piece.imageId===img.id).map(piece=>piece.mask),kind:'subjects'}]))}:currentScene;
+  renderCutMap($('cut-workspace-canvas'),sourceScene,available,{scale:.7,imageId:previewImageId});
+  $('cut-workspace-canvas').classList.toggle('picking',picking&&!archive);
+  $('cut-room-count').textContent=selected?masks.length+' visible cuts':'No source selected';
+  $('pick-subject').disabled=!!archive||settings.cutStyle!=='subjects'||!selected||analysisStates.get(selected)?.busy===true;
+  const candidates=$('cutout-candidates');candidates.replaceChildren();
+  const saved=archive?archive.pieces.map((piece,index)=>({
+    imageId:piece.imageId,key:'archived:'+index,mask:piece.mask,
+    cutWidth:piece.layerCuts.width,cutHeight:piece.layerCuts.height
+  })):stagedCutouts;
+  $('candidate-count').textContent=masks.length+' available';
+  if(!selected)candidates.append(element('p','small-note','Add images, then choose a source.'));
+  for(const mask of masks) {
+    const cutout=archive?null:cutoutFromMask(selected,mask,cuts),isChosen=cutout&&saved.some(c=>c.key===cutout.key);
+    const button=element('button','cutout-card'+(isChosen?' selected':''));
+    button.type='button';button.disabled=!!archive;
+    button.setAttribute('aria-pressed',String(!!isChosen));
+    const thumb=element('canvas');thumbnail(thumb,selected,mask,archive?archive.cuts.width:cuts.width,archive?archive.cuts.height:cuts.height);
+    button.append(thumb,element('span',null,mask.label||'Piece '+(Number(mask.index)+1)));
+    button.append(element('small',null,isChosen?'✓ IN THE TRAY':archive?'ARCHIVED':'+ SELECT CUTOUT'));
+    button.addEventListener('click',()=>{
+      if(stagedCutouts.some(c=>c.key===cutout.key))stagedCutouts=stagedCutouts.filter(c=>c.key!==cutout.key);
+      else if(stagedCutouts.length>=MAX_CUTOUTS){notice('The tray can hold up to '+MAX_CUTOUTS+' cutouts.',true);return;}
+      else stagedCutouts.push(cutout);
+      renderCutRoom();
+    });
+    candidates.append(button);
+  }
+  const tray=$('cutout-selection');tray.replaceChildren();
+  for(const [index,cutout] of saved.entries()){
+    const image=images.find(i=>i.id===cutout.imageId);
+    const item=element('div','cutout-tray-item');
+    const thumb=element('canvas');
+    if(image)thumbnail(thumb,image,cutout.mask,cutout.cutWidth,cutout.cutHeight);
+    item.append(thumb,element('span',null,(image?.title||'Source')+' · '+(cutout.mask.label||'Piece '+(index+1))));
+    if(!archive){
+      const remove=element('button',null,'×');remove.type='button';remove.setAttribute('aria-label','Remove cutout '+(index+1)+' from transfer tray');
+      remove.addEventListener('click',()=>{stagedCutouts=stagedCutouts.filter(c=>c.key!==cutout.key);renderCutRoom();});
+      item.append(remove);
+    }
+    tray.append(item);
+  }
+  $('selection-count').textContent=String(saved.length);
+  const capacity=layout?.slots.length||0,valid=!archive&&saved.length>0&&saved.length<=MAX_CUTOUTS&&saved.length<=settings.pieces;
+  $('transfer-summary').textContent=archive?saved.length+' archived scraps':saved.length+' scrap'+(saved.length===1?'':'s')+' selected';
+  $('transfer-help').textContent=archive?'This layer is locked. Its cuts and placement cannot be changed.':
+    !saved.length?'Choose at least one cutout. Nothing moves onto the board until you transfer it.':
+    saved.length>settings.pieces?'The piece limit is '+settings.pieces+'. Reduce the tray or increase Maximum pieces in the assembly settings.':
+    saved.length>capacity?'The current layout has '+capacity+' positions. Transfer will find a more spacious ALGO/ART baseline.':
+    'Ready to transfer: all '+saved.length+' cutouts will be placed once, not duplicated.';
+  $('transfer-cutouts').disabled=!valid;
+}
+function transferCutouts() {
+  if(archivedCutLayer||!stagedCutouts.length)return;
+  try {
+    if(stagedCutouts.length>settings.pieces)throw new Error('The Maximum pieces setting only allows '+settings.pieces+' pieces.');
+    const validated=validateCutouts(stagedCutouts,images.map(i=>i.id));
+    if(validated.length>(layout?.slots.length||0)){
+      const newGuide=nextBaseline(validated.length);
+      settings=sanitiseSettings({...settings,layoutMode:newGuide.mode,layoutSeed:newGuide.seed});
+      layout=newGuide.layout;layoutKey=JSON.stringify([settings.layoutMode,settings.layoutSeed,settings.pieces,settings.orientation,settings.negativeSpace,settings.rotation]);
+    }
+    activeCutouts=validated;stagedCutouts=validated.slice();
+    fragmentCache.clear();syncControls();rememberSettings();
+    closeCutRoom();previewLayerId='current';chooseView($('view-collage'));rebuild();void persist();
+    notice(activeCutouts.length+' cutouts transferred. Now recompose, shuffle, or lock this layer.');
+  }catch(error){notice('Transfer failed: '+error.message,true);}
+}
 function renderLayerList() {
   const root=$('layer-list');root.replaceChildren();
   const addRow=(id,label,isCurrent)=>{
@@ -116,6 +249,10 @@ function renderLayerList() {
     guide.setAttribute('aria-label','View layout map for '+label);
     guide.addEventListener('click',()=>{previewLayerId=id;renderLayerList();chooseView($('view-layout'));});
     row.append(title,guide);
+    const cutButton=element('button',null,isCurrent?'✂ Edit cuts':'✂ View cuts');
+    cutButton.type='button';cutButton.setAttribute('aria-label',isCurrent?'Edit cutting room for active layer':'View archived cutting room for '+label);
+    cutButton.addEventListener('click',()=>openCutRoom(id));
+    row.append(cutButton);
     if(!isCurrent) {
       const remove=element('button',null,'Remove');remove.type='button';
       remove.setAttribute('aria-label','Remove '+label+' from collage');
@@ -194,12 +331,14 @@ function renderPool() {
     const img=element('img');img.src=image.objectURL;img.alt=image.title;img.title=image.title;
     const remove=element('button','remove-image','×');remove.setAttribute('aria-label','Remove '+image.title+' from pool');
     remove.addEventListener('click',()=>{
-      if(referencedLayerImages(lockedLayers).has(image.id)){notice('This image belongs to a locked layer. Remove that layer before deleting the image.',true);return;}
+      if(referencedLayerImages(lockedLayers).has(image.id)||activeCutouts.some(c=>c.imageId===image.id)||stagedCutouts.some(c=>c.imageId===image.id)){
+        notice('This photograph supplies a locked or selected cutout. Remove the cutout before deleting its source.',true);return;
+      }
       images=images.filter(i=>i!==image);URL.revokeObjectURL(image.objectURL);poolChanged();
     });
     const title=element('p',null,image.title);title.title=image.title;
     const inspect=element('button','inspect-image','Cut map ↗');inspect.setAttribute('aria-label','Inspect cuts for '+image.title);
-    inspect.addEventListener('click',()=>{previewImageId=image.id;syncInspector();chooseView($('view-cuts'));$('canvas-panel').scrollIntoView({block:'center',behavior:'smooth'});});
+    inspect.addEventListener('click',()=>{previewImageId=image.id;openCutRoom();});
     const state=analysisStates.get(image),summary=state?.busy?state.message:state?.error?(settings.cutStyle==='subjects'?'Bounded detail · retry available':'Large fragments · retry available'):image.analysis?.subjects.length?image.analysis.subjects.length+' subject'+(image.analysis.subjects.length===1?'':'s'):settings.cutStyle==='subjects'?'Bounded detail':'Large fragments';
     const badge=element('span','analysis-badge',summary);badge.title=state?.error?'Subject recognition failed: '+state.error:summary;
     const use=element('label');const checkbox=element('input');checkbox.type='checkbox';checkbox.checked=image.enabled!==false;checkbox.setAttribute('aria-label','Use '+image.title+' in collage');
@@ -328,7 +467,7 @@ async function exportPNG() {
 async function saveProject() {
   $('save-project').disabled=true;
   try {
-    const project=await projectDocument(settings,images,lockedLayers),blob=new Blob([JSON.stringify(project)],{type:'application/json'});
+    const project=await projectDocument(settings,images,lockedLayers,activeCutouts),blob=new Blob([JSON.stringify(project)],{type:'application/json'});
     if(blob.size>MAX_PROJECT_BYTES)throw new Error('This project is too large to save. Remove some images.');
     download(blob,filename('json'));notice('Project saved with its image pool, settings and seeds.');
   } catch(error){notice('Project save failed: '+error.message,true);}finally{$('save-project').disabled=false;}
@@ -347,7 +486,10 @@ async function openProject(file) {
     }
     analyser.cancelAll();analysisStates.clear();images.forEach(i=>URL.revokeObjectURL(i.objectURL));images=next;next=[];
     settings=project.settings;lockedLayers=project.layers;previewLayerId='current';currentScene=null;
-    cutKey='';layoutKey='';syncControls();rememberSettings();poolChanged();notice('Project opened with '+lockedLayers.length+' locked layers.');
+    activeCutouts=project.cutouts||[];stagedCutouts=activeCutouts.slice();legacyCutoutMigration=project.cutouts===null;
+    if($('cut-room').open)closeCutRoom();
+    cutKey='';layoutKey='';syncControls();rememberSettings();poolChanged();
+    notice('Project opened with '+lockedLayers.length+' locked layers and '+activeCutouts.length+' transferred cutouts.');
   } catch(error){next.forEach(i=>URL.revokeObjectURL(i.objectURL));notice('The project could not be opened: '+error.message,true);}
   finally{$('project-input').value='';}
 }
@@ -356,15 +498,20 @@ for(const [key,id] of Object.entries(controlMap)) {
   const input=$(id);input.addEventListener(input.type==='range'?'input':'change',()=>{
     if(key==='orientation'&&lockedLayers.length){syncControls();notice('Remove locked layers before changing the canvas orientation.',true);return;}
     const value=input.type==='checkbox'?input.checked:input.type==='range'?Number(input.value):input.value;
+    if(key==='pieces'&&value<activeCutouts.length){
+      syncControls();notice('The current layer has '+activeCutouts.length+' transferred scraps. Remove some in the Cutting Room before lowering the piece limit.',true);return;
+    }
     settings=sanitiseSettings({...settings,[key]:value});fragmentCache.clear();syncControls();rememberSettings();rebuild();
   });
 }
 const regenerate=(key,prefix)=>{settings={...settings,[key]:newSeed(prefix)};syncControls();rememberSettings();rebuild();};
 $('recut').addEventListener('click',()=>regenerate('cutSeed','CUT'));
-function nextBaseline() {
+function nextBaseline(minPieces=activeCutouts.length) {
   const modes=['field','geometric','rects'];
-  const candidates=Array.from({length:9},(_,i)=>({mode:modes[i%3],seed:newSeed('LAYOUT')}));
-  return pickSpreadBaseline(A,settings,candidates);
+  const candidates=Array.from({length:minPieces>9?30:18},(_,i)=>({mode:modes[i%3],seed:newSeed('LAYOUT')}));
+  const available=candidates.filter(candidate=>makeLayout(A,sanitiseSettings({...settings,layoutMode:candidate.mode,layoutSeed:candidate.seed})).slots.length>=minPieces);
+  if(!available.length)throw new Error('No new guide has '+minPieces+' placement positions. Reduce cutouts or increase Maximum pieces.');
+  return pickSpreadBaseline(A,settings,available);
 }
 $('new-baseline').addEventListener('click',()=>{
   try {
@@ -382,26 +529,46 @@ $('lock-layer').addEventListener('click',()=>{
     const next=nextBaseline();
     const newLayer=captureLayer(currentScene,crypto.randomUUID(),'Layer '+(lockedLayers.length+1));
     lockedLayers=[...lockedLayers,newLayer];
+    activeCutouts=[];stagedCutouts=[];
     settings=sanitiseSettings({...settings,layoutMode:next.mode,layoutSeed:next.seed});
     previewLayerId='current';fragmentCache.clear();
     syncControls();rememberSettings();rebuild();void persist();
-    notice(newLayer.name+' locked. Layer '+(lockedLayers.length+1)+' has a new independent guide.');
+    requestAnimationFrame(()=>openCutRoom());
+    notice(newLayer.name+' locked. Cut new pieces in the Cutting Room for Layer '+(lockedLayers.length+1)+'.');
   }catch(error){notice('Could not lock the layer: '+error.message,true);}
 });
-$('shuffle-images').addEventListener('click',()=>regenerate('imageSeed','POOL'));
+$('shuffle-images').addEventListener('click',()=>{
+  if(activeCutouts.length<2){notice('Transfer at least two cutouts before shuffling them.',true);return;}
+  const seed=newSeed('POOL'),rng=A.makeR(seed),scraps=activeCutouts.slice();
+  for(let i=scraps.length-1;i>0;i--){const j=rng.int(0,i);[scraps[i],scraps[j]]=[scraps[j],scraps[i]];}
+  activeCutouts=scraps;stagedCutouts=scraps.slice();
+  settings={...settings,imageSeed:seed};rememberSettings();rebuild();void persist();
+});
 $('search-form').addEventListener('submit',event=>{event.preventDefault();void doSearch();});
 document.querySelectorAll('[data-topic]').forEach(button=>button.addEventListener('click',()=>{$('query').value=button.dataset.topic;void doSearch();}));
 $('more-results').addEventListener('click',()=>void doSearch(true));
 $('provider').addEventListener('change',resetSearch);$('license-policy').addEventListener('change',resetSearch);
 $('upload-button').addEventListener('click',()=>$('upload-input').click());$('empty-upload').addEventListener('click',()=>$('upload-input').click());
 $('upload-input').addEventListener('change',()=>void addUploads($('upload-input').files));
+$('cut-upload').addEventListener('click',()=>$('cut-upload-input').click());
+$('cut-upload-input').addEventListener('change',()=>{void addUploads($('cut-upload-input').files);$('cut-upload-input').value='';});
+$('cut-find-more').addEventListener('click',()=>{closeCutRoom();document.querySelector('.source-section').scrollIntoView({behavior:'smooth'});});
+for(const id of ['open-cut-room','go-to-cutting','view-cuts','empty-cut-room'])
+  $(id).addEventListener('click',()=>openCutRoom());
+$('close-cut-room').addEventListener('click',closeCutRoom);
+$('cut-room').addEventListener('close',()=>{
+  picking=false;archivedCutLayer=null;$('pick-subject').setAttribute('aria-pressed','false');
+});
+$('transfer-cutouts').addEventListener('click',transferCutouts);
 $('save-project').addEventListener('click',()=>void saveProject());$('open-project').addEventListener('click',()=>$('project-input').click());
 $('project-input').addEventListener('change',()=>void openProject($('project-input').files[0]));
 $('export').addEventListener('click',()=>void exportPNG());$('credits-button').addEventListener('click',showCredits);
 $('close-credits').addEventListener('click',()=>$('credits-dialog').close());
 $('download-credits').addEventListener('click',()=>download(new Blob([creditsText(scene,images)],{type:'text/plain;charset=utf-8'}),filename('credits.txt')));
 $('clear-pool').addEventListener('click',()=>{
-  if(lockedLayers.length){notice('Remove locked layers before clearing their source images.',true);return;}
+  if(lockedLayers.length||activeCutouts.length||stagedCutouts.length){
+    notice('Remove all layer cutouts before clearing their source images.',true);return;
+  }
   analyser.cancelAll();analysisStates.clear();images.forEach(i=>URL.revokeObjectURL(i.objectURL));images=[];poolChanged();});
 $('pool-select-all').addEventListener('click',()=>{images.forEach(i=>i.enabled=true);poolChanged();});
 const tabs=Array.from(document.querySelectorAll('[data-view]'));
@@ -418,19 +585,23 @@ tabs.forEach((button,i)=>{
     chooseView(target);target.focus();
   });
 });
-$('cut-preview-image').addEventListener('change',()=>{previewImageId=$('cut-preview-image').value;picking=false;$('pick-subject').setAttribute('aria-pressed','false');draw();});
+$('cut-preview-image').addEventListener('change',()=>{previewImageId=$('cut-preview-image').value;picking=false;$('pick-subject').setAttribute('aria-pressed','false');renderCutRoom();});
 $('find-subjects').addEventListener('click',()=>{
   for(const image of images)if(image.enabled!==false)void analyseImage(image);
 });
 $('pick-subject').addEventListener('click',()=>{
+  if(archivedCutLayer)return;
   picking=!picking;$('pick-subject').setAttribute('aria-pressed',String(picking));
-  $('pick-help').textContent=picking?'Click or tap inside the object you want to keep.':'Dashed lines are ALGO/ART regions. Bright areas are the pieces retained.';draw();
+  $('pick-help').textContent=picking?'Click or tap inside the object you want to keep.':'Dashed lines are ALGO/ART regions. Bright areas are the pieces retained.';renderCutRoom();
 });
-$('artwork').addEventListener('click',event=>{
-  if(!picking||view!=='cuts'||settings.cutStyle!=='subjects')return;
+$('cut-workspace-canvas').addEventListener('click',event=>{
+  if(!picking||!$('cut-room').open||archivedCutLayer||settings.cutStyle!=='subjects')return;
   const image=images.find(i=>i.id===previewImageId);if(!image)return;
-  const rect=$('artwork').getBoundingClientRect(),point={x:(event.clientX-rect.left)/rect.width,y:(event.clientY-rect.top)/rect.height};
-  picking=false;$('pick-subject').setAttribute('aria-pressed','false');$('pick-help').textContent='Tracing the selected subject…';draw();void analyseImage(image,point);
+  const rect=$('cut-workspace-canvas').getBoundingClientRect();
+  const point={x:(event.clientX-rect.left)/rect.width,y:(event.clientY-rect.top)/rect.height};
+  if(point.x<0||point.x>1||point.y<0||point.y>1)return;
+  picking=false;$('pick-subject').setAttribute('aria-pressed','false');$('pick-help').textContent='Tracing the selected subject…';
+  renderCutRoom();void analyseImage(image,point);
 });
 let dragCount=0;
 document.addEventListener('dragover',event=>{if(event.dataTransfer.types.includes('Files')){event.preventDefault();event.dataTransfer.dropEffect='copy';}});
@@ -450,6 +621,9 @@ try {
   }
   try {lockedLayers=validateLockedLayers(stored.layers,images.map(i=>i.id),settings.orientation);}
   catch(error){lockedLayers=[];notice('The saved layer stack could not be restored: '+error.message,true);}
-  $('storage-status').textContent='Pool and layers saved in this browser. Save a project for a portable copy.';
+  try {activeCutouts=stored.cutouts===null?[]:validateCutouts(stored.cutouts,images.map(i=>i.id));}
+  catch(error){activeCutouts=[];notice('The selected cutouts could not be restored: '+error.message,true);}
+  stagedCutouts=activeCutouts.slice();legacyCutoutMigration=stored.cutouts===null&&images.length>0;
+  $('storage-status').textContent='Images, locked layers, and transferred cutouts saved in this browser.';
 } catch {$('storage-status').textContent='Browser storage is unavailable. Save a project file to keep your pool.';$('storage-status').classList.add('error');}
 hydrating=false;renderPool();syncInspector();updateAnalysisStatus();rebuild();

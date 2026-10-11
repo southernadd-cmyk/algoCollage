@@ -119,7 +119,7 @@ test('version 2 projects keep subject masks and version 1 projects keep their or
   globalThis.FileReader=class {readAsDataURL(){this.result=image.data;this.onload();}};
   try {
     const saved=await projectDocument(DEFAULTS,[{id:'one',analysis,blob:new Blob(['hello']),element:{},objectURL:'blob:local'}]);
-    assert.equal(saved.version,3);assert.deepEqual(saved.images[0].analysis,analysis);
+    assert.equal(saved.version,4);assert.deepEqual(saved.images[0].analysis,analysis);
     assert.ok(!('element' in saved.images[0]));assert.ok(!('objectURL' in saved.images[0]));
   }finally {globalThis.FileReader=oldFileReader;}
 });
