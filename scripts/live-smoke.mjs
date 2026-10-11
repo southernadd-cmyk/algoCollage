@@ -77,16 +77,32 @@ try {
     assert.match(info,/pieces/);
     await saveScreenshot('whole-subjects');
   });
-  await stage('Partial subjects, re-cut and recompose',async()=>{
+  await stage('Partial subjects, re-cut and randomised baseline',async()=>{
     await page.locator('#whole-subjects').uncheck();
     await page.locator('#cut-size').evaluate(el=>{el.value='65';el.dispatchEvent(new Event('input',{bubbles:true}));});
     const oldCut=await page.locator('#cut-seed').inputValue();
     const oldLayout=await page.locator('#layout-seed').inputValue();
     await page.locator('#recut').click();
     assert.notEqual(await page.locator('#cut-seed').inputValue(),oldCut);
-    await page.locator('#recompose').click();
+    await page.locator('#new-baseline').click();
     assert.notEqual(await page.locator('#layout-seed').inputValue(),oldLayout);
     await saveScreenshot('partial-subjects');
+  });
+  await stage('Lock two independent layers and inspect their guides',async()=>{
+    await page.locator('#lock-layer').click();
+    await page.waitForFunction(()=>document.querySelectorAll('#layer-list .layer-item').length===2);
+    assert.ok(await page.locator('#orientation').isDisabled(),'Canvas orientation must remain fixed while layers are locked');
+    const firstLayerGuide=page.locator('#layer-list .layer-item').first().getByRole('button',{name:/View layout map/});
+    await firstLayerGuide.click();
+    assert.match(await page.locator('#layout-guide-name').innerText(),/Layer 1 · locked/);
+    await page.locator('#layer-list .layer-item').last().getByRole('button',{name:/View layout map/}).click();
+    assert.match(await page.locator('#layout-guide-name').innerText(),/Active layer · editable/);
+    await page.locator('#lock-layer').click();
+    await page.waitForFunction(()=>document.querySelectorAll('#layer-list .layer-item').length===3);
+    await page.locator('#view-collage').click();
+    record('Combined locked layer stack: '+(await page.locator('#canvas-info').innerText()));
+    assert.match(await page.locator('#canvas-info').innerText(),/3 layers/);
+    await saveScreenshot('layered-collage');
   });
   await stage('PNG export and portable project round trip',async()=>{
     const exportEvent=page.waitForEvent('download',{timeout:45000});
@@ -105,7 +121,9 @@ try {
     const projectDownload=await saveEvent,projectPath=output+'/project.json';
     await projectDownload.saveAs(projectPath);
     const project=JSON.parse(await readFile(projectPath,'utf8'));
-    assert.equal(project.version,2);
+    assert.equal(project.version,3);
+    assert.equal(project.layers.length,2,'Both frozen layers must be included in the project');
+    assert.ok(project.layers.every(layer=>layer.layout?.slots?.length&&layer.pieces?.length),'Each locked layer must retain its layout map and cut geometry');
     assert.equal(project.images.length,fixtures.length);
     assert.ok(project.images.some(img=>img.analysis?.subjects?.length),'Portable project lost extracted subjects');
     record('Saved project with '+project.images.map(i=>i.analysis?.subjects?.length||0).join(', ')+' subject masks');
@@ -119,6 +137,8 @@ try {
     }
     await page.locator('#project-input').setInputFiles({name:'project.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
     await page.waitForFunction(count=>document.querySelectorAll('#pool .analysis-badge').length===count,fixtures.length,{timeout:30000});
+    await page.waitForFunction(()=>document.querySelectorAll('#layer-list .layer-item').length===3);
+    record('Round trip retained '+(await page.locator('#layer-list .layer-item').count())+' layer rows');
   });
   record('PASS all live Chrome photo/recognition/cut/export smoke checks');
   await saveScreenshot('final');
